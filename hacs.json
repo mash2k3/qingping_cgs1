@@ -1,0 +1,7 @@
+{
+    "name": "Qingping Pro AQM",
+    "domains": ["sensor"],
+    "iot_class": "Local Push",
+    "homeassistant": "2024.8",
+    "render_readme": true
+  }
