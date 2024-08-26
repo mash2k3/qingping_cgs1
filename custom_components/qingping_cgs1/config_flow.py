@@ -22,7 +22,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         if user_input is None:
             return self.async_show_form(
-                step_id="device",
+                step_id="user",
                 data_schema=vol.Schema({
                     vol.Required(CONF_NAME): str,
                     vol.Required(CONF_MAC): str,
