@@ -1,0 +1,14 @@
+{
+    "config": {
+        "step": {
+            "device": {
+                "data": {
+                    "name": "Device Name",
+                    "mac": "MAC Address"
+                },
+                "description": "Set up your Qingping CGS1 device",
+                "title": "Qingping Pro AQM"
+            }
+        }
+    }
+}
