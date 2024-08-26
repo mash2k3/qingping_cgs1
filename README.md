@@ -5,7 +5,7 @@ and when you get to the **home assistant integration section** come back here an
 
 ## HACS Installation
 - Go to http://homeassistant.local:8123/hacs/integrations
-- Add https://github.com/bob-tm/ha-qingping custom integration repository
+- Add https://github.com/mash2k3/qingping_cgs1 custom integration repository
 - Download the Qingping Pro AQM repository
 - Go to Home Assistant devices/integrations and add new integration
 - Choose "Qingping Pro AQM" from the list and follow the config flow steps
