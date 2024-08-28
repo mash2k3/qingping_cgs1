@@ -14,7 +14,7 @@ After that is complete continue with HACS installation.
 There are two ways getting MQTT to work on your Qingping Air Monitor.
 
 1. Contact to support@qingping.co (easiest way)
-2. Configuring yourself via https://developer.qingping.co/ (the more customizable way)
+2. Configuring yourself via https://developer.qingping.co/ (the more customizable way).
    **Note!** ⚠️ Make sure you have at least firmware 4.1.8_0267 to accomodate option number two below.
 
 For option number one you connect to support and mention you want to use the 'Privatization function' of your device. List the MAC address and your MQTT details. You will get a reply back to factory reset your device.
