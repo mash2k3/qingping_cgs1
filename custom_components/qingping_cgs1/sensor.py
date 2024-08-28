@@ -1,10 +1,8 @@
 """Support for Qingping CGS1 sensors."""
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-from datetime import timedelta
 
 from homeassistant.components import mqtt
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
@@ -12,15 +10,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME, CONF_MAC
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN, MQTT_TOPIC_PREFIX,
     SENSOR_BATTERY, SENSOR_CO2, SENSOR_HUMIDITY, SENSOR_PM10, SENSOR_PM25, SENSOR_TEMPERATURE, SENSOR_TVOC,
-    PERCENTAGE, PPM, TEMP_CELSIUS, CONCENTRATION,
-    ATTR_TYPE, ATTR_UP_ITVL, ATTR_DURATION,
-    DEFAULT_TYPE, DEFAULT_UP_ITVL, DEFAULT_DURATION,
-    RECONNECTION_INTERVAL
+    PERCENTAGE, PPM, PPB, TEMP_CELSIUS, CONCENTRATION,
+    CONF_TEMPERATURE_OFFSET, CONF_HUMIDITY_OFFSET
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,25 +29,66 @@ async def async_setup_entry(
     """Set up Qingping CGS1 sensor based on a config entry."""
     mac = config_entry.data[CONF_MAC]
     name = config_entry.data[CONF_NAME]
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+
+    device_info = {
+        "identifiers": {(DOMAIN, mac)},
+        "name": name,
+        "manufacturer": "Qingping",
+        "model": "CGS1",
+    }
 
     sensors = [
-        QingpingCGS1Sensor(hass, config_entry, mac, name, SENSOR_BATTERY, PERCENTAGE, SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT),
-        QingpingCGS1Sensor(hass, config_entry, mac, name, SENSOR_CO2, PPM, SensorDeviceClass.CO2, SensorStateClass.MEASUREMENT),
-        QingpingCGS1Sensor(hass, config_entry, mac, name, SENSOR_HUMIDITY, PERCENTAGE, SensorDeviceClass.HUMIDITY, SensorStateClass.MEASUREMENT),
-        QingpingCGS1Sensor(hass, config_entry, mac, name, SENSOR_PM10, CONCENTRATION, SensorDeviceClass.PM10, SensorStateClass.MEASUREMENT),
-        QingpingCGS1Sensor(hass, config_entry, mac, name, SENSOR_PM25, CONCENTRATION, SensorDeviceClass.PM25, SensorStateClass.MEASUREMENT),
-        QingpingCGS1Sensor(hass, config_entry, mac, name, SENSOR_TEMPERATURE, TEMP_CELSIUS, SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT),
-        QingpingCGS1Sensor(hass, config_entry, mac, name, SENSOR_TVOC, PPM, SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS, SensorStateClass.MEASUREMENT),
+        QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_BATTERY, PERCENTAGE, SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT, device_info),
+        QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_CO2, PPM, SensorDeviceClass.CO2, SensorStateClass.MEASUREMENT, device_info),
+        QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_HUMIDITY, PERCENTAGE, SensorDeviceClass.HUMIDITY, SensorStateClass.MEASUREMENT, device_info),
+        QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_PM10, CONCENTRATION, SensorDeviceClass.PM10, SensorStateClass.MEASUREMENT, device_info),
+        QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_PM25, CONCENTRATION, SensorDeviceClass.PM25, SensorStateClass.MEASUREMENT, device_info),
+        QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_TEMPERATURE, TEMP_CELSIUS, SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, device_info),
+        QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_TVOC, PPB, SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS, SensorStateClass.MEASUREMENT, device_info),
     ]
 
     async_add_entities(sensors)
 
-class QingpingCGS1Sensor(SensorEntity):
+    @callback
+    def message_received(message):
+        """Handle new MQTT messages."""
+        try:
+            payload = json.loads(message.payload)
+            if not isinstance(payload, dict):
+                _LOGGER.error("Payload is not a dictionary")
+                return
+
+            if payload.get("mac") != mac:
+                _LOGGER.debug("Received message for a different device")
+                return
+
+            sensor_data = payload.get("sensorData")
+            if not isinstance(sensor_data, list) or not sensor_data:
+                _LOGGER.error("sensorData is not a non-empty list")
+                return
+
+            for data in sensor_data:
+                for sensor in sensors:
+                    value = data.get(sensor._sensor_type, {}).get("value")
+                    if value is not None:
+                        sensor.update_from_latest_data(value)
+
+        except json.JSONDecodeError:
+            _LOGGER.error("Invalid JSON in MQTT message: %s", message.payload)
+        except Exception as e:
+            _LOGGER.error("Error processing MQTT message: %s", str(e))
+
+    await mqtt.async_subscribe(
+        hass, f"{MQTT_TOPIC_PREFIX}/{mac}/up", message_received, 1
+    )
+
+class QingpingCGS1Sensor(CoordinatorEntity, SensorEntity):
     """Representation of a Qingping CGS1 sensor."""
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry, mac: str, name: str, sensor_type: str, unit: str, device_class: str, state_class: str) -> None:
+    def __init__(self, coordinator, config_entry, mac, name, sensor_type, unit, device_class, state_class, device_info):
         """Initialize the sensor."""
-        self.hass = hass
+        super().__init__(coordinator)
         self._config_entry = config_entry
         self._mac = mac
         self._sensor_type = sensor_type
@@ -60,76 +97,25 @@ class QingpingCGS1Sensor(SensorEntity):
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
         self._attr_state_class = state_class
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, mac)},
-            "name": name,
-            "manufacturer": "Qingping",
-            "model": "CGS1",
-        }
-        self._available = False
-        self._remove_timer = None
+        self._attr_device_info = device_info
 
-    async def async_added_to_hass(self) -> None:
-        """Subscribe to MQTT events and set up timer."""
-        await super().async_added_to_hass()
-
-        @callback
-        def message_received(message):
-            """Handle new MQTT messages."""
-            try:
-                payload = json.loads(message.payload)
-                if payload.get("mac") == self._mac:
-                    sensor_data = payload["sensorData"][0]
-                    if self._sensor_type in sensor_data:
-                        value = sensor_data[self._sensor_type]["value"]
-                        
-                        # Process temperature and humidity values
-                        if self._sensor_type == SENSOR_TEMPERATURE:
-                            value = round(float(value), 1) if '.' in str(value) else value
-                        elif self._sensor_type == SENSOR_HUMIDITY:
-                            value = round(float(value), 1) if '.' in str(value) else int(value)
-                        
-                        self._attr_native_value = value
-                        if not self._available:
-                            self._available = True
-                            asyncio.create_task(self.publish_config())
-                        self.async_write_ha_state()
-            except json.JSONDecodeError:
-                _LOGGER.error("Invalid JSON in MQTT message")
-            except KeyError:
-                _LOGGER.error("Unexpected message format")
-
-        await mqtt.async_subscribe(
-            self.hass, f"{MQTT_TOPIC_PREFIX}/{self._mac}/up", message_received, 1
-        )
-
-        # Set up timer for periodic publishing
-        self._remove_timer = async_track_time_interval(
-            self.hass,
-            self.publish_config,
-            timedelta(seconds=RECONNECTION_INTERVAL)
-        )
-
-        # Publish config immediately upon setup
-        await self.publish_config()
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Clean up the timer when entity is removed."""
-        if self._remove_timer:
-            self._remove_timer()
-
-    async def publish_config(self, *args):
-        """Publish configuration message to MQTT."""
-        payload = {
-            ATTR_TYPE: DEFAULT_TYPE,
-            ATTR_UP_ITVL: DEFAULT_UP_ITVL,
-            ATTR_DURATION: DEFAULT_DURATION
-        }
-        topic = f"{MQTT_TOPIC_PREFIX}/{self._mac}/down"
-        await mqtt.async_publish(self.hass, topic, json.dumps(payload))
-        _LOGGER.info(f"Published config to {topic}: {payload}")
+    @callback
+    def update_from_latest_data(self, value):
+        """Update the sensor with the latest data."""
+        try:
+            if self._sensor_type == SENSOR_TEMPERATURE:
+                offset = self.coordinator.data.get(CONF_TEMPERATURE_OFFSET, 0)
+                self._attr_native_value = round(float(value) + offset, 1)
+            elif self._sensor_type == SENSOR_HUMIDITY:
+                offset = self.coordinator.data.get(CONF_HUMIDITY_OFFSET, 0)
+                self._attr_native_value = round(float(value) + offset, 1)
+            else:
+                self._attr_native_value = int(value)
+            self.async_write_ha_state()
+        except ValueError:
+            _LOGGER.error("Invalid value received for %s: %s", self._sensor_type, value)
 
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self._available
+        return self.coordinator.last_update_success

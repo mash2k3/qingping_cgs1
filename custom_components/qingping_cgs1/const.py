@@ -18,6 +18,14 @@ PERCENTAGE = "%"
 PPM = "ppm"
 TEMP_CELSIUS = "°C"
 CONCENTRATION = "µg/m³"
+PPB = "ppb"
+
+# Offsets
+CONF_TEMPERATURE_OFFSET = "temperature_offset"
+CONF_HUMIDITY_OFFSET = "humidity_offset"
+
+# Default values for offsets
+DEFAULT_OFFSET = 0
 
 # MQTT topics
 MQTT_TOPIC_PREFIX = "qingping"
