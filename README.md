@@ -10,11 +10,6 @@ After that is complete continue with HACS installation.
 - Go to Home Assistant devices/integrations and add new integration
 - Choose "Qingping Pro AQM" from the list and follow the config flow steps
 
-# qingping-air-monitor-mqtt
-Use local MQTT functionality of the Qingping Air Monitor
-
-The goal is to have a fully functioning device without the need or dependency of the cloud. For this to work the initial setup does need internet access to sync your MQTT settings with the device. At moment of writing there is no option to insert the settings via the GUI of the device.
-
 **Note!** ⚠️ Make sure you have at least firmware 4.1.8_0267 to accomodate option number two below.
 
 ## Options
