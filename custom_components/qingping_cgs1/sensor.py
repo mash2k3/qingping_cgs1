@@ -21,7 +21,7 @@ from homeassistant.exceptions import HomeAssistantError
 from .const import (
     DOMAIN, MQTT_TOPIC_PREFIX,
     SENSOR_BATTERY, SENSOR_CO2, SENSOR_HUMIDITY, SENSOR_PM10, SENSOR_PM25, SENSOR_TEMPERATURE, SENSOR_TVOC,
-    PERCENTAGE, PPM, TEMP_CELSIUS, CONCENTRATION,
+    PERCENTAGE, PPM, PPB, TEMP_CELSIUS, CONCENTRATION,
     CONF_TEMPERATURE_OFFSET, CONF_HUMIDITY_OFFSET,
     ATTR_TYPE, ATTR_UP_ITVL, ATTR_DURATION,
     DEFAULT_TYPE, DEFAULT_UP_ITVL, DEFAULT_DURATION,
@@ -85,7 +85,7 @@ async def async_setup_entry(
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_PM10, CONCENTRATION, SensorDeviceClass.PM10, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_PM25, CONCENTRATION, SensorDeviceClass.PM25, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_TEMPERATURE, TEMP_CELSIUS, SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, device_info),
-        QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_TVOC, PPM, SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS, SensorStateClass.MEASUREMENT, device_info),
+        QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_TVOC, PPB, SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS, SensorStateClass.MEASUREMENT, device_info),
     ]
 
     async_add_entities(sensors)
@@ -224,7 +224,7 @@ class QingpingCGS1Sensor(CoordinatorEntity, SensorEntity):
                 offset = self.coordinator.data.get(CONF_HUMIDITY_OFFSET, 0)
                 self._attr_native_value = round(float(value) + offset, 1)
             else:
-                self._attr_native_value = float(value)
+                self._attr_native_value = int(value)
             self.async_write_ha_state()
         except ValueError:
             _LOGGER.error("Invalid value received for %s: %s", self._sensor_type, value)
