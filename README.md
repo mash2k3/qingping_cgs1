@@ -6,7 +6,7 @@
 ## Requirements
 - MQTT integration installed and configured.
 - Enable MQTT on Qingping AQM devices using instructions above.
-  </b> Client ID, Up Topic and Down Topic must filled out extacly as shown in example.
+  </b> Client ID, Up Topic and Down Topic must be filled out extacly as shown in [example](https://github.com/mash2k3/qingping_cgs1/blob/main/enableMQTT.md).
 - HACS
 
 ## HACS Installation
