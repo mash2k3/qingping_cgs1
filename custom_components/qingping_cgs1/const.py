@@ -23,9 +23,11 @@ PPB = "ppb"
 # Offsets
 CONF_TEMPERATURE_OFFSET = "temperature_offset"
 CONF_HUMIDITY_OFFSET = "humidity_offset"
+CONF_UPDATE_INTERVAL = "update_interval"
 
-# Default values for offsets
+# Default values for offsets and update interval
 DEFAULT_OFFSET = 0
+DEFAULT_UPDATE_INTERVAL = 15
 
 # MQTT topics
 MQTT_TOPIC_PREFIX = "qingping"
@@ -36,7 +38,4 @@ ATTR_UP_ITVL = "up_itvl"
 ATTR_DURATION = "duration"
 
 DEFAULT_TYPE = "12"
-DEFAULT_UP_ITVL = "15"
 DEFAULT_DURATION = "86400"
-
-RECONNECTION_INTERVAL = 86400  # 24 hours in seconds

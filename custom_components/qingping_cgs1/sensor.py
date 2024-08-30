@@ -22,10 +22,9 @@ from .const import (
     DOMAIN, MQTT_TOPIC_PREFIX,
     SENSOR_BATTERY, SENSOR_CO2, SENSOR_HUMIDITY, SENSOR_PM10, SENSOR_PM25, SENSOR_TEMPERATURE, SENSOR_TVOC,
     PERCENTAGE, PPM, PPB, TEMP_CELSIUS, CONCENTRATION,
-    CONF_TEMPERATURE_OFFSET, CONF_HUMIDITY_OFFSET,
+    CONF_TEMPERATURE_OFFSET, CONF_HUMIDITY_OFFSET, CONF_UPDATE_INTERVAL,
     ATTR_TYPE, ATTR_UP_ITVL, ATTR_DURATION,
-    DEFAULT_TYPE, DEFAULT_UP_ITVL, DEFAULT_DURATION,
-    RECONNECTION_INTERVAL
+    DEFAULT_TYPE, DEFAULT_DURATION
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,23 +49,13 @@ async def async_setup_entry(
     """Set up Qingping CGS1 sensor based on a config entry."""
     mac = config_entry.data[CONF_MAC]
     name = config_entry.data[CONF_NAME]
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
     async def async_update_data():
         """Fetch data from API endpoint."""
         # This is a placeholder. In a real scenario, you might
         # fetch data from an API or process local data here.
         return {}
-
-    coordinator = DataUpdateCoordinator(
-        hass,
-        _LOGGER,
-        name="sensor",
-        update_method=async_update_data,
-        update_interval=timedelta(seconds=60),
-    )
-
-    # Fetch initial data so we have data when entities subscribe
-    await coordinator.async_refresh()
 
     device_info = {
         "identifiers": {(DOMAIN, mac)},
@@ -76,16 +65,20 @@ async def async_setup_entry(
     }
 
     status_sensor = QingpingCGS1StatusSensor(coordinator, config_entry, mac, name, device_info)
+    firmware_sensor = QingpingCGS1FirmwareSensor(coordinator, config_entry, mac, name, device_info)
+    type_sensor = QingpingCGS1TypeSensor(coordinator, config_entry, mac, name, device_info)
 
     sensors = [
         status_sensor,
+        firmware_sensor,
+        type_sensor,
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_BATTERY, PERCENTAGE, SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_CO2, PPM, SensorDeviceClass.CO2, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_HUMIDITY, PERCENTAGE, SensorDeviceClass.HUMIDITY, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_PM10, CONCENTRATION, SensorDeviceClass.PM10, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_PM25, CONCENTRATION, SensorDeviceClass.PM25, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_TEMPERATURE, TEMP_CELSIUS, SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, device_info),
-        QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_TVOC, PPB, SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS, SensorStateClass.MEASUREMENT, device_info),
+        QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_TVOC, PPB, SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS, SensorStateClass.MEASUREMENT, device_info),
     ]
 
     async_add_entities(sensors)
@@ -112,13 +105,21 @@ async def async_setup_entry(
             if timestamp is not None:
                 status_sensor.update_timestamp(timestamp)
 
+            firmware_version = payload.get("version")
+            if firmware_version is not None:
+                firmware_sensor.update_version(firmware_version)
+
+            device_type = payload.get("type")
+            if device_type is not None:
+                type_sensor.update_type(device_type)
+
             sensor_data = payload.get("sensorData")
             if not isinstance(sensor_data, list) or not sensor_data:
                 _LOGGER.error("sensorData is not a non-empty list")
                 return
 
             for data in sensor_data:
-                for sensor in sensors[1:]:  # Skip status sensor
+                for sensor in sensors[3:]:  # Skip status, firmware, and type sensors
                     value = data.get(sensor._sensor_type, {})
                     if isinstance(value, dict):
                         value = value.get("value")
@@ -137,12 +138,12 @@ async def async_setup_entry(
     # Set up timer for periodic publishing
     async def publish_config_wrapper(*args):
         if await ensure_mqtt_connected(hass):
-            await sensors[1].publish_config()
+            await sensors[3].publish_config()
         else:
             _LOGGER.error("Failed to connect to MQTT for periodic config publish")
 
     hass.data[DOMAIN][config_entry.entry_id]["remove_timer"] = async_track_time_interval(
-        hass, publish_config_wrapper, timedelta(seconds=RECONNECTION_INTERVAL)
+        hass, publish_config_wrapper, timedelta(seconds=int(DEFAULT_DURATION))
     )
 
     # Publish config immediately upon setup
@@ -165,6 +166,7 @@ class QingpingCGS1StatusSensor(CoordinatorEntity, SensorEntity):
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_native_value = "offline"
         self._last_timestamp = 0
+        self._last_status = "online"
 
     @callback
     def update_timestamp(self, timestamp):
@@ -185,6 +187,19 @@ class QingpingCGS1StatusSensor(CoordinatorEntity, SensorEntity):
             for sensor in sensors:
                 if isinstance(sensor, QingpingCGS1Sensor):
                     sensor.async_write_ha_state()
+            # Call publish_config when status changes from offline to online
+            if self._last_status == "offline" and new_status == "online":
+                asyncio.create_task(self._publish_config_on_status_change())
+            
+            self._last_status = new_status
+
+    async def _publish_config_on_status_change(self):
+        """Publish config when status changes from offline to online."""
+        sensors = self.hass.data[DOMAIN][self._config_entry.entry_id].get("sensors", [])
+        for sensor in sensors:
+            if isinstance(sensor, QingpingCGS1Sensor):
+                await sensor.publish_config()
+                break  # We only need to call it once                
 
     async def async_added_to_hass(self):
         """Set up a timer to regularly update the status."""
@@ -196,6 +211,46 @@ class QingpingCGS1StatusSensor(CoordinatorEntity, SensorEntity):
         self.async_on_remove(async_track_time_interval(
             self.hass, update_status, timedelta(seconds=60)
         ))
+
+class QingpingCGS1FirmwareSensor(CoordinatorEntity, SensorEntity):
+    """Representation of a Qingping CGS1 firmware sensor."""
+
+    def __init__(self, coordinator, config_entry, mac, name, device_info):
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._mac = mac
+        self._attr_name = f"{name} Firmware"
+        self._attr_unique_id = f"{mac}_firmware"
+        self._attr_device_info = device_info
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_native_value = None
+
+    @callback
+    def update_version(self, version):
+        """Update the firmware version."""
+        self._attr_native_value = version
+        self.async_write_ha_state()
+
+class QingpingCGS1TypeSensor(CoordinatorEntity, SensorEntity):
+    """Representation of a Qingping CGS1 type sensor."""
+
+    def __init__(self, coordinator, config_entry, mac, name, device_info):
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._mac = mac
+        self._attr_name = f"{name} Report Type"
+        self._attr_unique_id = f"{mac}_report_type"
+        self._attr_device_info = device_info
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_native_value = None
+
+    @callback
+    def update_type(self, device_type):
+        """Update the device type."""
+        self._attr_native_value = device_type
+        self.async_write_ha_state()
 
 class QingpingCGS1Sensor(CoordinatorEntity, SensorEntity):
     """Representation of a Qingping CGS1 sensor."""
@@ -231,9 +286,10 @@ class QingpingCGS1Sensor(CoordinatorEntity, SensorEntity):
 
     async def publish_config(self):
         """Publish configuration message to MQTT."""
+        update_interval = self.coordinator.data.get(CONF_UPDATE_INTERVAL, 15)
         payload = {
             ATTR_TYPE: DEFAULT_TYPE,
-            ATTR_UP_ITVL: DEFAULT_UP_ITVL,
+            ATTR_UP_ITVL: f"{int(update_interval)}",
             ATTR_DURATION: DEFAULT_DURATION
         }
         topic = f"{MQTT_TOPIC_PREFIX}/{self._mac}/down"
