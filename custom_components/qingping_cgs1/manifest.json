@@ -2,10 +2,10 @@
     "domain": "qingping_cgs1",
     "name": "Qingping Pro AQM",
     "config_flow": true,
-    "documentation": "",
+    "documentation": "https://github.com/mash2k3/qingping_cgs1",
     "requirements": [],
     "dependencies": ["mqtt"],
     "codeowners": ["@mash2k3"],
     "iot_class": "local_push",
-    "version": "0.1.0"
+    "version": "1.1.4"
   }
