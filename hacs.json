@@ -1,5 +1,5 @@
 {
-    "name": "Qingping Pro AQM",
-    "homeassistant": "2024.8",
-    "render_readme": true
+  "name": "Qingping Pro AQM",
+  "homeassistant": "2024.8",
+  "render_readme": true
 }

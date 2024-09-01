@@ -16,7 +16,6 @@ SENSOR_TVOC = "tvoc"
 # Unit of measurement
 PERCENTAGE = "%"
 PPM = "ppm"
-TEMP_CELSIUS = "°C"
 CONCENTRATION = "µg/m³"
 PPB = "ppb"
 

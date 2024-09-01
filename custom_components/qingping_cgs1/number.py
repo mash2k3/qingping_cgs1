@@ -20,6 +20,7 @@ async def async_setup_entry(
     mac = config_entry.data[CONF_MAC]
     name = config_entry.data[CONF_NAME]
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    native_temp_unit = hass.config.units.temperature_unit
 
     device_info = {
         "identifiers": {(DOMAIN, mac)},
@@ -29,7 +30,7 @@ async def async_setup_entry(
     }
 
     async_add_entities([
-        QingpingCGS1OffsetNumber(coordinator, config_entry, mac, name, "Temperature Offset", CONF_TEMPERATURE_OFFSET, device_info, "°C"),
+        QingpingCGS1OffsetNumber(coordinator, config_entry, mac, name, "Temp Offset", CONF_TEMPERATURE_OFFSET, device_info, native_temp_unit),
         QingpingCGS1OffsetNumber(coordinator, config_entry, mac, name, "Humidity Offset", CONF_HUMIDITY_OFFSET, device_info, "%"),
         QingpingCGS1UpdateIntervalNumber(coordinator, config_entry, mac, name, device_info),
     ])
