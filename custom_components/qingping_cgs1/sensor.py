@@ -10,7 +10,7 @@ import asyncio
 from homeassistant.components import mqtt
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME, CONF_MAC
+from homeassistant.const import CONF_NAME, CONF_MAC, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
@@ -21,7 +21,7 @@ from homeassistant.exceptions import HomeAssistantError
 from .const import (
     DOMAIN, MQTT_TOPIC_PREFIX,
     SENSOR_BATTERY, SENSOR_CO2, SENSOR_HUMIDITY, SENSOR_PM10, SENSOR_PM25, SENSOR_TEMPERATURE, SENSOR_TVOC,
-    PERCENTAGE, PPM, PPB, TEMP_CELSIUS, CONCENTRATION,
+    PERCENTAGE, PPM, PPB, CONCENTRATION,
     CONF_TEMPERATURE_OFFSET, CONF_HUMIDITY_OFFSET, CONF_UPDATE_INTERVAL,
     ATTR_TYPE, ATTR_UP_ITVL, ATTR_DURATION,
     DEFAULT_TYPE, DEFAULT_DURATION
@@ -50,6 +50,7 @@ async def async_setup_entry(
     mac = config_entry.data[CONF_MAC]
     name = config_entry.data[CONF_NAME]
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    native_temp_unit = hass.config.units.temperature_unit
 
     async def async_update_data():
         """Fetch data from API endpoint."""
@@ -67,17 +68,19 @@ async def async_setup_entry(
     status_sensor = QingpingCGS1StatusSensor(coordinator, config_entry, mac, name, device_info)
     firmware_sensor = QingpingCGS1FirmwareSensor(coordinator, config_entry, mac, name, device_info)
     type_sensor = QingpingCGS1TypeSensor(coordinator, config_entry, mac, name, device_info)
+    mac_sensor = QingpingCGS1MACSensor(coordinator, config_entry, mac, name, device_info)
 
     sensors = [
         status_sensor,
         firmware_sensor,
         type_sensor,
+        mac_sensor,
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_BATTERY, PERCENTAGE, SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_CO2, PPM, SensorDeviceClass.CO2, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_HUMIDITY, PERCENTAGE, SensorDeviceClass.HUMIDITY, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_PM10, CONCENTRATION, SensorDeviceClass.PM10, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_PM25, CONCENTRATION, SensorDeviceClass.PM25, SensorStateClass.MEASUREMENT, device_info),
-        QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_TEMPERATURE, TEMP_CELSIUS, SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, device_info),
+        QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_TEMPERATURE, native_temp_unit, SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_TVOC, PPB, SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS, SensorStateClass.MEASUREMENT, device_info),
     ]
 
@@ -113,13 +116,17 @@ async def async_setup_entry(
             if device_type is not None:
                 type_sensor.update_type(device_type)
 
+            mac_address = payload.get("mac")
+            if mac_address is not None:
+                mac_sensor.update_mac(mac_address)
+
             sensor_data = payload.get("sensorData")
             if not isinstance(sensor_data, list) or not sensor_data:
                 _LOGGER.error("sensorData is not a non-empty list")
                 return
 
             for data in sensor_data:
-                for sensor in sensors[3:]:  # Skip status, firmware, and type sensors
+                for sensor in sensors[4:]:  # Skip status, firmware, mac and type sensors
                     value = data.get(sensor._sensor_type, {})
                     if isinstance(value, dict):
                         value = value.get("value")
@@ -138,7 +145,7 @@ async def async_setup_entry(
     # Set up timer for periodic publishing
     async def publish_config_wrapper(*args):
         if await ensure_mqtt_connected(hass):
-            await sensors[3].publish_config()
+            await sensors[4].publish_config()
         else:
             _LOGGER.error("Failed to connect to MQTT for periodic config publish")
 
@@ -232,6 +239,26 @@ class QingpingCGS1FirmwareSensor(CoordinatorEntity, SensorEntity):
         self._attr_native_value = version
         self.async_write_ha_state()
 
+class QingpingCGS1MACSensor(CoordinatorEntity, SensorEntity):
+    """Representation of a Qingping CGS1 mac sensor."""
+
+    def __init__(self, coordinator, config_entry, mac, name, device_info):
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._mac = mac
+        self._attr_name = f"{name} MAC Address"
+        self._attr_unique_id = f"{mac}_mac"
+        self._attr_device_info = device_info
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_native_value = None
+
+    @callback
+    def update_mac(self, mac):
+        """Update the mac address."""
+        self._attr_native_value = mac
+        self.async_write_ha_state()
+
 class QingpingCGS1TypeSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Qingping CGS1 type sensor."""
 
@@ -274,7 +301,13 @@ class QingpingCGS1Sensor(CoordinatorEntity, SensorEntity):
         try:
             if self._sensor_type == SENSOR_TEMPERATURE:
                 offset = self.coordinator.data.get(CONF_TEMPERATURE_OFFSET, 0)
-                self._attr_native_value = round(float(value) + offset, 1)
+                temp_celsius = float(value)
+                if self._attr_native_unit_of_measurement == UnitOfTemperature.FAHRENHEIT:
+                    # Convert to Fahrenheit
+                    temp_fahrenheit = (temp_celsius * 9/5) + 32
+                    self._attr_native_value = round(float(temp_fahrenheit) + offset, 1)
+                else:
+                    self._attr_native_value = round(float(temp_celsius) + offset, 1)
             elif self._sensor_type == SENSOR_HUMIDITY:
                 offset = self.coordinator.data.get(CONF_HUMIDITY_OFFSET, 0)
                 self._attr_native_value = round(float(value) + offset, 1)
