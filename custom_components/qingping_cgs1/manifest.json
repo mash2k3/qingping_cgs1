@@ -6,6 +6,7 @@
     "dependencies": ["mqtt"],
     "documentation": "https://github.com/mash2k3/qingping_cgs1",
     "iot_class": "local_push",
+    "issue_tracker": "https://github.com/mash2k3/qingping_cgs1/issues",
     "requirements": [],
     "version": "1.1.4"
   }
