@@ -18,7 +18,7 @@
 - Devices should be discovered and listed, if not just manually add them.
 - Add the device name and mac address. **Note!**⚠️ do not include : in your mac address. example: 532D38701E1F
 
-## How it works
+## Info
 This integration uses report type 12, which is realtime reporting. Default update interval is set to 15 seconds and it is adjustable in the device config page. By default the Qingping Pro AQM device is set to report type 17, which historic data reporting and updates every 15 minutes.
 </br>The integration will set report type to 12 for a duration of 24 hours and when it expires it will reset it again. The same goes if the device goes offline and comes back online.
 
