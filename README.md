@@ -43,9 +43,10 @@ This custom component integrates the Qingping Pro Air Quality Monitor [CGS1] wit
 The integration supports automatic discovery of Qingping CGS1 devices. If your device is not discovered automatically, you can add it manually by providing the MAC address. 
 ⚠️ Do not include : in your MAC address. example: 532D38701E1F
 
-## Screenshot
+## Screenshots
 
-[**Click Here**](https://github.com/user-attachments/assets/0414e373-b107-4545-b42d-32a29f30709b)
+[**Device Page**](https://github.com/user-attachments/assets/0414e373-b107-4545-b42d-32a29f30709b)  
+[**Device Discovery**](https://github.com/user-attachments/assets/b27d218e-e815-4e64-b342-a44b1287d9a1)
 
 ## How it Works
 
