@@ -4,7 +4,7 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 
-This custom component integrates the Qingping Pro Air Quality Monitor [CGS1] with Home Assistant, allowing you to monitor various environmental parameters in your smart home setup.
+This custom component integrates the Qingping Pro Air Quality Monitor [CGS1] with Home Assistant, allowing you to monitor various environmental parameters in realtime.
 
 ## Requirements
 
