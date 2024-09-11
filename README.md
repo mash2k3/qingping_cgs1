@@ -64,7 +64,7 @@ The integration supports automatic discovery of Qingping CGS1 devices. If your d
    - Battery level
    - Device status (online/offline)
    - Firmware version
-   - Report type (12 - realtime / 17 - historic)
+   - Report type (12 = realtime / 17 = historic)
    - MAC address
 
 4. **Data Updates**: The component subscribes to MQTT messages from the device. When new data is received, it updates the relevant sensors in Home Assistant.
@@ -73,7 +73,7 @@ The integration supports automatic discovery of Qingping CGS1 devices. If your d
 
 6. **Update Interval**: You can configure how often the device should report new data. This is done through a number entity that allows you to set the update interval in seconds.
 
-7. **Configuration Publishing**: The integration periodically publishes configuration messages to the device via MQTT. This ensures that the device maintains the correct reporting interval and other settings.
+7. **Configuration Publishing**: The integration periodically publishes configuration messages to the device via MQTT. This ensures that the device maintains the correct reporting interval, realtime reporting and other settings.
 
 8. **Status Monitoring**: The integration tracks the device's online/offline status based on the timestamp of the last received message. If no message is received for 5 minutes, the device is considered offline.
 
