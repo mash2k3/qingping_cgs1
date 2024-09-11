@@ -45,8 +45,8 @@ The integration supports automatic discovery of Qingping CGS1 devices. If your d
 
 ## Screenshots
 
-[**Screenshot 1**](https://github.com/user-attachments/assets/0414e373-b107-4545-b42d-32a29f30709b)  [**Screenshot 2**](https://github.com/user-attachments/assets/b27d218e-e815-4e64-b342-a44b1287d9a1)
-
+[**Device Page**](https://github.com/user-attachments/assets/0414e373-b107-4545-b42d-32a29f30709b)  
+[**Device Discovery**](https://github.com/user-attachments/assets/b27d218e-e815-4e64-b342-a44b1287d9a1)
 
 ## How it Works
 
