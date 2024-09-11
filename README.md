@@ -64,7 +64,7 @@ The integration supports automatic discovery of Qingping CGS1 devices. If your d
    - Battery level
    - Device status (online/offline)
    - Firmware version
-   - Device type
+   - Report type (12 - realtime / 17 - historic)
    - MAC address
 
 4. **Data Updates**: The component subscribes to MQTT messages from the device. When new data is received, it updates the relevant sensors in Home Assistant.
