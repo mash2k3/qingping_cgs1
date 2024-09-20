@@ -60,24 +60,26 @@ The integration supports automatic discovery of Qingping CGS1 devices. If your d
    - CO2 level
    - PM2.5
    - PM10
-   - TVOC
+   - TVOC (ppb, ppm and mg/m³)
    - Battery level
    - Device status (online/offline)
    - Firmware version
    - Device type
    - MAC address
 
-4. **Data Updates**: The component subscribes to MQTT messages from the device. When new data is received, it updates the relevant sensors in Home Assistant.
+4. **TVOC Sensor**: The sensor can be set to 3 different measurement units, by default it is ppb. The component converts from ppb to get ppm and mg/m³. (ppm = ppb/1000) / (mg/m³ = ppb/1000 * 0.0409 * 111.1 [concentration (ppm) x 0.0409 x molecular weight])
 
-5. **Offset Adjustments**: The integration allows you to set offset values for temperature and humidity readings. These offsets are applied to the raw sensor data before it's displayed in Home Assistant.
+5. **Data Updates**: The component subscribes to MQTT messages from the device. When new data is received, it updates the relevant sensors in Home Assistant.
 
-6. **Update Interval**: You can configure how often the device should report new data. This is done through a number entity that allows you to set the update interval in seconds.
+6. **Offset Adjustments**: The integration allows you to set offset values for temperature and humidity readings. These offsets are applied to the raw sensor data before it's displayed in Home Assistant.
 
-7. **Configuration Publishing**: The integration periodically publishes configuration messages to the device via MQTT. This ensures that the device maintains the correct reporting interval and other settings.
+7. **Update Interval**: You can configure how often the device should report new data. This is done through a number entity that allows you to set the update interval in seconds.
 
-8. **Status Monitoring**: The integration tracks the device's online/offline status based on the timestamp of the last received message. If no message is received for 5 minutes, the device is considered offline.
+8. **Configuration Publishing**: The integration periodically publishes configuration messages to the device via MQTT. This ensures that the device maintains the correct reporting interval and other settings.
 
-9. **Unit Conversion**: The integration automatically converts temperature readings to the unit system configured in your Home Assistant instance (Celsius or Fahrenheit).
+9. **Status Monitoring**: The integration tracks the device's online/offline status based on the timestamp of the last received message. If no message is received for 5 minutes, the device is considered offline.
+
+10. **Unit Conversion**: The integration automatically converts temperature readings to the unit system configured in your Home Assistant instance (Celsius or Fahrenheit).
 
 ## Troubleshooting
 

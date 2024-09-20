@@ -9,7 +9,7 @@ import logging
 
 from .const import DOMAIN, CONF_TEMPERATURE_OFFSET, CONF_HUMIDITY_OFFSET, DEFAULT_OFFSET, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER, Platform.SELECT]
 
 _LOGGER = logging.getLogger(__name__)
 
