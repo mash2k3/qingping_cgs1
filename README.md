@@ -4,8 +4,8 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 
-This custom component integrates the Qingping Pro Air Quality Monitor [CGS1] with Home Assistant, allowing you to monitor various environmental parameters in your smart home setup.
-
+This custom component integrates the Qingping Pro Air Quality Monitor [CGS1] with Home Assistant, allowing you to monitor various environmental parameters in realtime.
+<br /><br /><br />
 ## Requirements
 
 - MQTT integration installed and configured.
@@ -39,16 +39,15 @@ This custom component integrates the Qingping Pro Air Quality Monitor [CGS1] wit
 5. Search for "Qingping Pro AQM" and follow the configuration steps
 
 ## Configuration
+<img src="https://github.com/user-attachments/assets/b27d218e-e815-4e64-b342-a44b1287d9a1" alt="Device Discovery" width="250" align="left">
+The integration supports automatic discovery of Qingping CGS1 devices.
+<br />If your device is not discovered automatically, you can add it manually by providing the MAC address. 
+<br />⚠️ Do not include : in your MAC address. example: 532D38701E1F
+<br /><br /><br /><br /><br /><br /><br /><br />
 
-The integration supports automatic discovery of Qingping CGS1 devices. If your device is not discovered automatically, you can add it manually by providing the MAC address. 
-⚠️ Do not include : in your MAC address. example: 532D38701E1F
-
-## Screenshots
-
-[**Device Page**](https://github.com/user-attachments/assets/0414e373-b107-4545-b42d-32a29f30709b)  
-[**Device Discovery**](https://github.com/user-attachments/assets/b27d218e-e815-4e64-b342-a44b1287d9a1)
 
 ## How it Works
+<img src="https://github.com/user-attachments/assets/46567747-a8cb-443e-be23-78a87e741a42" alt="Device Discovery" width="275" align="right">
 
 1. **Device Discovery**: The integration uses MQTT to discover Qingping CGS1 devices on your network. It listens for messages on the MQTT topic `qingping/#` to identify available devices.
 
@@ -64,18 +63,20 @@ The integration supports automatic discovery of Qingping CGS1 devices. If your d
    - Battery level
    - Device status (online/offline)
    - Firmware version
-   - Device type
+   - Report type (12 = realtime / 17 = historic)
    - MAC address
 
-4. **TVOC Sensor**: The sensor can be set to 3 different measurement units, by default it is ppb. The component converts from ppb to get ppm and mg/m³. (ppm = ppb/1000) / (mg/m³ = ppb/1000 * 0.0409 * 111.1 [concentration (ppm) x 0.0409 x molecular weight])
-
+4. **TVOC Sensor**: The sensor can be set to 3 different measurement units, by default it is ppb. The component converts from ppb to get ppm and mg/m³.
+   - ppm = ppb/1000
+   - mg/m³ = ppb/1000 * 0.0409 * 111.1 (concentration (ppm) x 0.0409 x molecular weight)
+      
 5. **Data Updates**: The component subscribes to MQTT messages from the device. When new data is received, it updates the relevant sensors in Home Assistant.
 
 6. **Offset Adjustments**: The integration allows you to set offset values for temperature and humidity readings. These offsets are applied to the raw sensor data before it's displayed in Home Assistant.
 
 7. **Update Interval**: You can configure how often the device should report new data. This is done through a number entity that allows you to set the update interval in seconds.
 
-8. **Configuration Publishing**: The integration periodically publishes configuration messages to the device via MQTT. This ensures that the device maintains the correct reporting interval and other settings.
+8. **Configuration Publishing**: The integration periodically publishes configuration messages to the device via MQTT. This ensures that the device maintains the correct reporting interval, realtime reporting and other settings.
 
 9. **Status Monitoring**: The integration tracks the device's online/offline status based on the timestamp of the last received message. If no message is received for 5 minutes, the device is considered offline.
 
