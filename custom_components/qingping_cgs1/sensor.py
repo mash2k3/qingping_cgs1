@@ -21,7 +21,7 @@ from homeassistant.exceptions import HomeAssistantError
 from .const import (
     DOMAIN, MQTT_TOPIC_PREFIX,
     SENSOR_BATTERY, SENSOR_CO2, SENSOR_HUMIDITY, SENSOR_PM10, SENSOR_PM25, SENSOR_TEMPERATURE, SENSOR_TVOC,
-    PERCENTAGE, PPM, PPB, CONCENTRATION,
+    PERCENTAGE, PPM, PPB, CONCENTRATION, CONF_TVOC_UNIT,
     CONF_TEMPERATURE_OFFSET, CONF_HUMIDITY_OFFSET, CONF_UPDATE_INTERVAL,
     ATTR_TYPE, ATTR_UP_ITVL, ATTR_DURATION,
     DEFAULT_TYPE, DEFAULT_DURATION
@@ -311,6 +311,17 @@ class QingpingCGS1Sensor(CoordinatorEntity, SensorEntity):
             elif self._sensor_type == SENSOR_HUMIDITY:
                 offset = self.coordinator.data.get(CONF_HUMIDITY_OFFSET, 0)
                 self._attr_native_value = round(float(value) + offset, 1)
+            elif self._sensor_type == SENSOR_TVOC:
+                tvoc_unit = self.coordinator.data.get(CONF_TVOC_UNIT, "ppb")
+                tvoc_value = int(value)
+                if tvoc_unit == "ppm":
+                    tvoc_value /= 1000
+                elif tvoc_unit == "mg/m³":
+                    tvoc_value /= 1000 
+                    tvoc_value *= 0.0409 
+                    tvoc_value *= 111.1  # Approximate conversion factor
+                self._attr_native_value = round(tvoc_value, 3)
+                self._attr_native_unit_of_measurement = tvoc_unit
             else:
                 self._attr_native_value = int(value)
             self.async_write_ha_state()

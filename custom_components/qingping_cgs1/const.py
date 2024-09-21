@@ -18,6 +18,7 @@ PERCENTAGE = "%"
 PPM = "ppm"
 CONCENTRATION = "µg/m³"
 PPB = "ppb"
+CONF_TVOC_UNIT = "tvoc_unit"
 
 # Offsets
 CONF_TEMPERATURE_OFFSET = "temperature_offset"
