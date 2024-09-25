@@ -19,7 +19,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ github.workspace }}/custom_components/xiaomi_miot/qingping_cgs1.zip
+          file: ${{ github.workspace }}/custom_components/qingping_cgs1/qingping_cgs1.zip
           asset_name: qingping_cgs1.zip
           tag: ${{ github.ref }}
           overwrite: true
