@@ -1,5 +1,7 @@
 {
   "name": "Qingping Pro AQM",
   "homeassistant": "2024.8",
-  "render_readme": true
+  "render_readme": true,
+  "zip_release": true,
+  "filename": "qingping_cgs1.zip"
 }
