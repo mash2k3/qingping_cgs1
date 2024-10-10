@@ -124,8 +124,7 @@ async def async_setup_entry(
             if not isinstance(sensor_data, list) or not sensor_data:
                 _LOGGER.error("sensorData is not a non-empty list")
                 return
-
-            for data in sensor_data:
+            for data in reversed(sensor_data):
                 for sensor in sensors[4:]:  # Skip status, firmware, mac and type sensors
                     value = data.get(sensor._sensor_type, {})
                     if isinstance(value, dict):
