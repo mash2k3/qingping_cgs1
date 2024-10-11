@@ -69,12 +69,14 @@ async def async_setup_entry(
     firmware_sensor = QingpingCGS1FirmwareSensor(coordinator, config_entry, mac, name, device_info)
     type_sensor = QingpingCGS1TypeSensor(coordinator, config_entry, mac, name, device_info)
     mac_sensor = QingpingCGS1MACSensor(coordinator, config_entry, mac, name, device_info)
+    battery_state = QingpingCGS1BatteryStateSensor(coordinator, config_entry, mac, name, device_info)
 
     sensors = [
         status_sensor,
         firmware_sensor,
         type_sensor,
         mac_sensor,
+        battery_state,
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_BATTERY, PERCENTAGE, SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_CO2, PPM, SensorDeviceClass.CO2, SensorStateClass.MEASUREMENT, device_info),
         QingpingCGS1Sensor(coordinator, config_entry, mac, name, SENSOR_HUMIDITY, PERCENTAGE, SensorDeviceClass.HUMIDITY, SensorStateClass.MEASUREMENT, device_info),
@@ -104,10 +106,6 @@ async def async_setup_entry(
                 _LOGGER.debug("Received message for a different device")
                 return
 
-            timestamp = payload.get("timestamp")
-            if timestamp is not None:
-                status_sensor.update_timestamp(timestamp)
-
             firmware_version = payload.get("version")
             if firmware_version is not None:
                 firmware_sensor.update_version(firmware_version)
@@ -115,6 +113,10 @@ async def async_setup_entry(
             device_type = payload.get("type")
             if device_type is not None:
                 type_sensor.update_type(device_type)
+
+            timestamp = payload.get("timestamp")
+            if timestamp is not None:
+                status_sensor.update_timestamp(timestamp)
 
             mac_address = payload.get("mac")
             if mac_address is not None:
@@ -124,13 +126,29 @@ async def async_setup_entry(
             if not isinstance(sensor_data, list) or not sensor_data:
                 _LOGGER.error("sensorData is not a non-empty list")
                 return
-            for data in reversed(sensor_data):
-                for sensor in sensors[4:]:  # Skip status, firmware, mac and type sensors
-                    value = data.get(sensor._sensor_type, {})
-                    if isinstance(value, dict):
-                        value = value.get("value")
-                    if value is not None:
-                        sensor.update_from_latest_data(value)
+            if len(sensor_data) == 1:
+                #ignore type 17 sensor data                
+                for data in sensor_data:
+                    battery_charging = None
+                    if SENSOR_BATTERY in data:
+                        battery_data = data[SENSOR_BATTERY]
+                        if isinstance(battery_data, dict):
+                            battery_charging = battery_data.get("status") == 1
+                    for sensor in sensors[4:]:  # Skip status, firmware, mac and type sensors
+                        if isinstance(sensor, QingpingCGS1BatteryStateSensor):
+                            if battery_charging is not None:
+                                sensor.update_battery_state(battery_charging)
+                        elif sensor._sensor_type in data:
+                            value = data[sensor._sensor_type]
+                            if isinstance(value, dict):
+                                value = value.get("value")
+                            if value is not None:
+                                sensor.update_from_latest_data(value)
+                                if sensor._sensor_type == SENSOR_BATTERY and battery_charging is not None:
+                                    sensor.update_battery_charging(battery_charging)
+            else:
+                _LOGGER.info("sensorData is type 17")
+                return
 
         except json.JSONDecodeError:
             _LOGGER.error("Invalid JSON in MQTT message: %s", message.payload)
@@ -144,7 +162,7 @@ async def async_setup_entry(
     # Set up timer for periodic publishing
     async def publish_config_wrapper(*args):
         if await ensure_mqtt_connected(hass):
-            await sensors[4].publish_config()
+            await sensors[5].publish_config()
         else:
             _LOGGER.error("Failed to connect to MQTT for periodic config publish")
 
@@ -258,6 +276,26 @@ class QingpingCGS1MACSensor(CoordinatorEntity, SensorEntity):
         self._attr_native_value = mac
         self.async_write_ha_state()
 
+class QingpingCGS1BatteryStateSensor(CoordinatorEntity, SensorEntity):
+    """Representation of a Qingping CGS1 battery state sensor."""
+
+    def __init__(self, coordinator, config_entry, mac, name, device_info):
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._mac = mac
+        self._attr_name = f"{name} Battery State"
+        self._attr_unique_id = f"{mac}_battery_state"
+        self._attr_device_info = device_info
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_native_value = None
+
+    @callback
+    def update_battery_state(self, status):
+        """Update the battery state."""
+        self._attr_native_value = "Charging" if status == 1 else "Discharging"
+        self.async_write_ha_state()
+
 class QingpingCGS1TypeSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Qingping CGS1 type sensor."""
 
@@ -293,6 +331,7 @@ class QingpingCGS1Sensor(CoordinatorEntity, SensorEntity):
         self._attr_device_class = device_class
         self._attr_state_class = state_class
         self._attr_device_info = device_info
+        self._battery_charging = False
 
     @callback
     def update_from_latest_data(self, value):
@@ -326,6 +365,43 @@ class QingpingCGS1Sensor(CoordinatorEntity, SensorEntity):
             self.async_write_ha_state()
         except ValueError:
             _LOGGER.error("Invalid value received for %s: %s", self._sensor_type, value)
+
+    @callback
+    def update_battery_charging(self, is_charging):
+        """Update the battery charging state."""
+        if self._sensor_type == SENSOR_BATTERY:
+            self._battery_charging = is_charging
+            self.async_write_ha_state()
+
+    @property
+    def icon(self):
+        """Return the icon of the sensor."""
+        if self._sensor_type == SENSOR_BATTERY:
+            if self._battery_charging:
+                return "mdi:battery-charging"
+            elif self._attr_native_value is not None:
+                battery_level = int(self._attr_native_value)
+                if battery_level <= 10:
+                    return "mdi:battery-10"
+                elif battery_level <= 20:
+                    return "mdi:battery-20"
+                elif battery_level <= 30:
+                    return "mdi:battery-30"
+                elif battery_level <= 40:
+                    return "mdi:battery-40"
+                elif battery_level <= 50:
+                    return "mdi:battery-50"
+                elif battery_level <= 60:
+                    return "mdi:battery-60"
+                elif battery_level <= 70:
+                    return "mdi:battery-70"
+                elif battery_level <= 80:
+                    return "mdi:battery-80"
+                elif battery_level <= 90:
+                    return "mdi:battery-90"
+                else:
+                    return "mdi:battery"
+        return super().icon
 
     async def publish_config(self):
         """Publish configuration message to MQTT."""
