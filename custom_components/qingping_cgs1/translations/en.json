@@ -2,7 +2,7 @@
     "config": {
         "step": {
             "user": {
-                "description": "Set up your Qingping CGS1 device",
+                "description": "Set up your Qingping CGS1/CGS2 device",
                 "title": "Qingping Pro AQM",
                 "data": {
                     "name": "Device Name",
@@ -11,10 +11,10 @@
             },
             "no_devices": {
                 "description": "Click submit to add device manually",
-                "title": "Qingping CGS1 device not found"
+                "title": "Qingping CGS1/CGS2 device not found"
             },
             "manual": {
-                "description": "Set up your Qingping CGS1 device",
+                "description": "Set up your Qingping CGS1/CGS2 device",
                 "title": "Qingping Pro AQM",
                 "data": {
                     "name": "Device Name",

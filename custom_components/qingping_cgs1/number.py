@@ -1,4 +1,4 @@
-"""Support for Qingping CGS1 offset number inputs."""
+"""Support for Qingping CGSx offset number inputs."""
 from __future__ import annotations
 
 from homeassistant.components.number import NumberEntity
@@ -9,34 +9,37 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import EntityCategory
 
-from .const import DOMAIN, CONF_TEMPERATURE_OFFSET, CONF_HUMIDITY_OFFSET, DEFAULT_OFFSET, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+from .const import DOMAIN, CONF_TEMPERATURE_OFFSET, CONF_HUMIDITY_OFFSET, DEFAULT_OFFSET, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL, MODEL_CGS2, SENSOR_NOISE, MODEL_CGS1
 
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Qingping CGS1 number inputs from a config entry."""
+    """Set up Qingping CGSx number inputs from a config entry."""
     mac = config_entry.data[CONF_MAC]
     name = config_entry.data[CONF_NAME]
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
     native_temp_unit = hass.config.units.temperature_unit
 
+    # Determine the model based on the presence of the noise sensor
+    model = MODEL_CGS2 if SENSOR_NOISE in coordinator.data else MODEL_CGS1
+
     device_info = {
         "identifiers": {(DOMAIN, mac)},
         "name": name,
         "manufacturer": "Qingping",
-        "model": "CGS1",
+        "model": model,
     }
 
     async_add_entities([
-        QingpingCGS1OffsetNumber(coordinator, config_entry, mac, name, "Temp Offset", CONF_TEMPERATURE_OFFSET, device_info, native_temp_unit),
-        QingpingCGS1OffsetNumber(coordinator, config_entry, mac, name, "Humidity Offset", CONF_HUMIDITY_OFFSET, device_info, "%"),
-        QingpingCGS1UpdateIntervalNumber(coordinator, config_entry, mac, name, device_info),
+        QingpingCGSxOffsetNumber(coordinator, config_entry, mac, name, "Temp Offset", CONF_TEMPERATURE_OFFSET, device_info, native_temp_unit),
+        QingpingCGSxOffsetNumber(coordinator, config_entry, mac, name, "Humidity Offset", CONF_HUMIDITY_OFFSET, device_info, "%"),
+        QingpingCGSxUpdateIntervalNumber(coordinator, config_entry, mac, name, device_info),
     ])
 
-class QingpingCGS1OffsetNumber(CoordinatorEntity, NumberEntity):
-    """Representation of a Qingping CGS1 offset number input."""
+class QingpingCGSxOffsetNumber(CoordinatorEntity, NumberEntity):
+    """Representation of a Qingping CGSx offset number input."""
 
     def __init__(self, coordinator, config_entry, mac, name, offset_name, offset_key, device_info, unit_of_measurement):
         """Initialize the number entity."""
@@ -81,8 +84,8 @@ class QingpingCGS1OffsetNumber(CoordinatorEntity, NumberEntity):
             self.coordinator.data[self._offset_key] = self._config_entry.data.get(self._offset_key, DEFAULT_OFFSET)
         self.async_write_ha_state()
 
-class QingpingCGS1UpdateIntervalNumber(CoordinatorEntity, NumberEntity):
-    """Representation of a Qingping CGS1 update interval number input."""
+class QingpingCGSxUpdateIntervalNumber(CoordinatorEntity, NumberEntity):
+    """Representation of a Qingping CGSx update interval number input."""
 
     def __init__(self, coordinator, config_entry, mac, name, device_info):
         """Initialize the number entity."""
