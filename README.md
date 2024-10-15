@@ -70,7 +70,7 @@ The integration supports automatic discovery of Qingping CGS1/CGS2 devices.
 
 4. **TVOC Sensor**: The sensor can be set to 3 different measurement units, by default it is ppb. The component converts from ppb to get ppm and mg/m³.
    - ppm = ppb/1000
-   - mg/m³ = ppb/1000 * 0.0409 * 111.1 (concentration (ppm) x 0.0409 x molecular weight)
+   - mg/m³ = ppb/1000 * 0.0409 * 111.1 (concentration (ppm) x 0.0409 x molecular weight)<br />
    **eTVOC Sensor**: The sensor can be set to 3 different measurement units, by default it is VOC index. The component converts from voc index to get ppb and mg/m³.
    - ppb = index * 10
    - mg/m³ = index * 0.0001
