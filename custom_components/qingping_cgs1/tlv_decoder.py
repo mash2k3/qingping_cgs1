@@ -75,7 +75,7 @@ def tlv_unpack(byte_array: bytes) -> dict[str, Any]:
     }
 
 
-def decode_th_data(byte_array: bytes) -> dict[str, Any]:
+def decode_th_data(byte_array: bytes, product_id: int = 0) -> dict[str, Any]:
     """Decode temperature, humidity, pressure, and battery data."""
     if len(byte_array) < 6:
         _LOGGER.error("Byte array too short for TH data decoding")
@@ -84,18 +84,24 @@ def decode_th_data(byte_array: bytes) -> dict[str, Any]:
     th = bytes_to_int_little_endian(byte_array[0:3])
     temperature = ((th >> 12) - 500) / 10
     humidity = (th & 0xFFF) / 10
-    pressure = bytes_to_int_little_endian(byte_array[3:5]) / 100.0  # Convert to kPa
+    raw_3_5 = bytes_to_int_little_endian(byte_array[3:5])
     battery = byte_array[5]
 
-    return {
+    out: dict[str, Any] = {
         "dataType": "data",
         "timestamp": 0,
         "time": "",
         "temperature": temperature,
         "humidity": humidity,
-        "pressure": pressure,
         "battery": battery,
     }
+
+    if product_id == 51:
+        out["co2"] = raw_3_5
+    else:
+        out["pressure"] = raw_3_5 / 100.0  # Convert to kPa
+
+    return out
 
 
 def decode_realtime_data(byte_array: bytes, product_id: int = 0) -> dict[str, Any]:
@@ -105,7 +111,7 @@ def decode_realtime_data(byte_array: bytes, product_id: int = 0) -> dict[str, An
         return {}
     
     timestamp = bytes_to_int_little_endian(byte_array[0:4])
-    realtime_data = decode_th_data(byte_array[4:])
+    realtime_data = decode_th_data(byte_array[4:], product_id)
     rssi = byte_array[10]
     if rssi >= 128:
         rssi = rssi - 256
@@ -134,7 +140,7 @@ def decode_history_data(byte_array: bytes, product_id: int = 0) -> list[dict[str
     
     while index + pack_len <= len(byte_array):
         history_pack = byte_array[index:index + pack_len]
-        history_data = decode_th_data(history_pack)
+        history_data = decode_th_data(history_pack, product_id)
         history_data["timestamp"] = timestamp + duration * i
         history_data["dataType"] = "data"
         history_data["time"] = fmt_timestamp(history_data["timestamp"])
