@@ -317,7 +317,9 @@ async def async_setup_entry(
     #sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_BATTERY, "Battery", PERCENTAGE, SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT, device_info))
     if model in ["CGS1", "CGS2", "CGDN1", "CGP22C", "CGP22W", "CGP23W"]:
         sensors.append(battery_state)
-        sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_BATTERY, "Battery", PERCENTAGE, SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT, device_info))
+        battery_sensor = QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_BATTERY, "Battery", PERCENTAGE, SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT, device_info)
+        battery_sensor._attr_entity_category = EntityCategory.DIAGNOSTIC
+        sensors.append(battery_sensor)
     sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_TEMPERATURE, "Temperature", native_temp_unit, SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, device_info))
     sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_HUMIDITY, "Humidity", PERCENTAGE, SensorDeviceClass.HUMIDITY, SensorStateClass.MEASUREMENT, device_info))
 
@@ -975,6 +977,11 @@ class QingpingDeviceSensor(CoordinatorEntity, SensorEntity):
 
     async def publish_config(self):
         """Publish configuration message to MQTT."""
+        # Check if entity has been added to hass yet
+        if not self.hass:
+            _LOGGER.debug(f"[{self._mac}] Sensor not yet added to hass, skipping config publish")
+            return
+            
         update_interval = self.coordinator.data.get(CONF_UPDATE_INTERVAL, 15)
         topic = f"{MQTT_TOPIC_PREFIX}/{self._mac}/down"
         
