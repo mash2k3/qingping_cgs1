@@ -192,14 +192,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry):
         """Get the options flow for this handler."""
-        return OptionsFlowHandler(config_entry)
+        return OptionsFlowHandler()
     
 class OptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options flow for Qingping CGS1."""
-
-    def __init__(self, entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        super().__init__(entry)  # Use parent class initialization instead
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -208,17 +204,17 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             # Update the config entry
             new_data = {
-                **self.entry.data,  # Use self.entry instead of self.config_entry
+                **self.config_entry.data,
                 CONF_MODEL: user_input[CONF_MODEL]
             }
             
             self.hass.config_entries.async_update_entry(
-                self.entry,  # Use self.entry instead of self.config_entry
+                self.config_entry,
                 data=new_data,
             )
             
             # Reload the integration to apply changes
-            await self.hass.config_entries.async_reload(self.entry.entry_id)
+            await self.hass.config_entries.async_reload(self._config_entry_id)
             
             return self.async_create_entry(title="", data=user_input)
 
@@ -227,7 +223,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=vol.Schema({
                 vol.Required(
                     CONF_MODEL,
-                    default=self.entry.data.get(CONF_MODEL, DEFAULT_MODEL)  # Use self.entry
+                    default=self.config_entry.data.get(CONF_MODEL, DEFAULT_MODEL)
                 ): vol.In(QP_MODELS),
             }),
         )
