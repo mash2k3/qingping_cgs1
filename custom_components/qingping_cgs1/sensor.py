@@ -17,7 +17,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpda
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.components.recorder.statistics import async_import_statistics
+from homeassistant.components.recorder.statistics import async_add_external_statistics
 
 from .const import (
     DOMAIN, MQTT_TOPIC_PREFIX,
@@ -308,11 +308,17 @@ async def _import_batch_statistics(
             statistic_id=f"qingping_cgs1:{mac.lower()}_{sensor_key}",
             unit_of_measurement=unit,
         )
-        async_import_statistics(hass, metadata, statistics)
-        _LOGGER.info(
-            "[%s] Imported %d statistics points for %s",
-            mac, len(statistics), sensor_key,
-        )
+        try:
+            async_add_external_statistics(hass, metadata, statistics)
+            _LOGGER.info(
+                "[%s] Imported %d statistics points for %s",
+                mac, len(statistics), sensor_key,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "[%s] Failed to import statistics for %s: %s",
+                mac, sensor_key, err,
+            )
 
 
 async def async_setup_entry(
@@ -847,8 +853,13 @@ class QingpingDeviceStatusSensor(CoordinatorEntity, SensorEntity):
             self._attr_native_value = new_status
             if self.entity_id:
                 self.async_write_ha_state()
-            _LOGGER.info("Device %s status changed from %s to %s (time since last message: %s seconds, timeout: %s)",
-                        self._mac, old_status, new_status, time_since_last_msg, timeout)
+            _LOGGER.info(
+                "Device %s status: %s -> %s | time_since=%ds timeout=%ds | "
+                "model=%s report_mode=%s options=%s last_ts=%s",
+                self._mac, old_status, new_status, time_since_last_msg, timeout,
+                model, report_mode if model in TLV_MODELS else "N/A",
+                dict(self._config_entry.options), self._last_timestamp,
+            )
 
             # Update other sensors' availability
             if DOMAIN in self.hass.data and self._config_entry.entry_id in self.hass.data[DOMAIN]:
@@ -879,11 +890,22 @@ class QingpingDeviceStatusSensor(CoordinatorEntity, SensorEntity):
     async def async_added_to_hass(self):
         """Set up a timer to regularly update the status."""
         await super().async_added_to_hass()
+        self._check_count = 0
 
         # Immediately check if we should be online based on recent activity
         self._update_status()
 
         async def update_status(*_):
+            self._check_count += 1
+            # Log every 5th check (every 5 minutes) for debugging
+            if self._check_count % 5 == 0:
+                model = self._config_entry.data.get(CONF_MODEL, "CGS1")
+                _LOGGER.info(
+                    "[periodic] %s: status=%s last_ts=%s age=%ds options=%s model=%s",
+                    self._mac, self._attr_native_value, self._last_timestamp,
+                    int(time.time()) - self._last_timestamp,
+                    dict(self._config_entry.options), model,
+                )
             self._update_status()
 
         self.async_on_remove(async_track_time_interval(

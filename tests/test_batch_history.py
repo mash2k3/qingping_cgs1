@@ -23,7 +23,7 @@ async def test_import_batch_statistics_creates_correct_metadata(hass):
     }
 
     with patch(
-        "custom_components.qingping_cgs1.sensor.async_import_statistics"
+        "custom_components.qingping_cgs1.sensor.async_add_external_statistics"
     ) as mock_import:
         await _import_batch_statistics(
             hass, "582D348611F9", "Test Device", batch_data, sensor_mappings
@@ -52,7 +52,7 @@ async def test_import_batch_statistics_aligns_timestamps(hass):
     sensor_mappings = {"temperature": ("Temperature", "°C")}
 
     with patch(
-        "custom_components.qingping_cgs1.sensor.async_import_statistics"
+        "custom_components.qingping_cgs1.sensor.async_add_external_statistics"
     ) as mock_import:
         await _import_batch_statistics(
             hass, "582D348611F9", "Test", batch_data, sensor_mappings
@@ -74,7 +74,7 @@ async def test_import_batch_statistics_skips_zero_timestamps(hass):
     sensor_mappings = {"temperature": ("Temperature", "°C")}
 
     with patch(
-        "custom_components.qingping_cgs1.sensor.async_import_statistics"
+        "custom_components.qingping_cgs1.sensor.async_add_external_statistics"
     ) as mock_import:
         await _import_batch_statistics(
             hass, "582D348611F9", "Test", batch_data, sensor_mappings
@@ -98,7 +98,7 @@ async def test_import_batch_statistics_skips_missing_sensor_keys(hass):
     }
 
     with patch(
-        "custom_components.qingping_cgs1.sensor.async_import_statistics"
+        "custom_components.qingping_cgs1.sensor.async_add_external_statistics"
     ) as mock_import:
         await _import_batch_statistics(
             hass, "582D348611F9", "Test", batch_data, sensor_mappings
@@ -120,7 +120,7 @@ async def test_import_batch_statistics_skips_missing_sensor_keys(hass):
 async def test_import_batch_statistics_empty_data(hass):
     """Empty batch data should not call async_import_statistics."""
     with patch(
-        "custom_components.qingping_cgs1.sensor.async_import_statistics"
+        "custom_components.qingping_cgs1.sensor.async_add_external_statistics"
     ) as mock_import:
         await _import_batch_statistics(
             hass, "582D348611F9", "Test", [], {"temperature": ("Temperature", "°C")}
