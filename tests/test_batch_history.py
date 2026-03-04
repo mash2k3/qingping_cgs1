@@ -45,7 +45,7 @@ async def test_import_batch_statistics_creates_correct_metadata(hass):
 async def test_import_batch_statistics_aligns_timestamps(hass):
     """Timestamps should be floored to 5-minute boundaries."""
     # 1709500123 is NOT on a 5-min boundary
-    # Floor: 1709500123 - (1709500123 % 300) = 1709500123 - 123 = 1709500000
+    # Floor: 1709500123 - (1709500123 % 300) = 1709500123 - 223 = 1709499900
     batch_data = [
         {"timestamp": 1709500123, "temperature": 22.5},
     ]
@@ -60,7 +60,7 @@ async def test_import_batch_statistics_aligns_timestamps(hass):
 
         stats = mock_import.call_args[0][2]
         assert len(stats) == 1
-        expected_dt = datetime.fromtimestamp(1709500000, tz=timezone.utc)
+        expected_dt = datetime.fromtimestamp(1709499900, tz=timezone.utc)
         assert stats[0].start == expected_dt
 
 

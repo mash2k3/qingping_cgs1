@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import time, math
 import asyncio
 
@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpda
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.components.recorder.statistics import async_import_statistics
 
 from .const import (
     DOMAIN, MQTT_TOPIC_PREFIX,
@@ -35,6 +36,16 @@ from .tlv_decoder import tlv_decode, is_tlv_format
 from .tlv_encoder import tlv_encode, int_to_bytes_little_endian
 
 _LOGGER = logging.getLogger(__name__)
+
+class StatisticData(dict):
+    """Dict subclass with attribute access for HA statistics compatibility."""
+    __getattr__ = dict.__getitem__
+    __setattr__ = dict.__setitem__
+
+class StatisticMetaData(dict):
+    """Dict subclass with attribute access for HA statistics compatibility."""
+    __getattr__ = dict.__getitem__
+    __setattr__ = dict.__setitem__
 
 OFFLINE_TIMEOUT_REALTIME = 300  # 5 minutes for real-time mode
 OFFLINE_TIMEOUT_HISTORIC = 900  # 15 minutes for historic mode
@@ -260,6 +271,48 @@ async def _send_initial_tlv_config(hass, config_entry, mac, model):
     
     await mqtt.async_publish(hass, topic, payload)
     _LOGGER.info(f"[{mac}] Initial config sent: Historic mode, temp unit: {temp_unit}")
+
+
+async def _import_batch_statistics(
+    hass: HomeAssistant,
+    mac: str,
+    device_name: str,
+    batch_data: list[dict],
+    sensor_mappings: dict[str, tuple[str, str]],
+) -> None:
+    """Import batch sensor data into HA long-term statistics."""
+    for sensor_key, (display_name, unit) in sensor_mappings.items():
+        statistics = []
+        for point in batch_data:
+            if sensor_key not in point:
+                continue
+            ts = point.get("timestamp", 0)
+            if ts == 0:
+                continue
+            value = float(point[sensor_key])
+            aligned_ts = ts - (ts % 300)
+            statistics.append(StatisticData(
+                start=datetime.fromtimestamp(aligned_ts, tz=timezone.utc),
+                mean=value,
+                state=value,
+            ))
+
+        if not statistics:
+            continue
+
+        metadata = StatisticMetaData(
+            has_mean=True,
+            has_sum=False,
+            name=f"{device_name} {display_name}",
+            source="qingping_cgs1",
+            statistic_id=f"qingping_cgs1:{mac}_{sensor_key}",
+            unit_of_measurement=unit,
+        )
+        async_import_statistics(hass, metadata, statistics)
+        _LOGGER.info(
+            "[%s] Imported %d statistics points for %s",
+            mac, len(statistics), sensor_key,
+        )
 
 
 async def async_setup_entry(
@@ -543,11 +596,28 @@ async def async_setup_entry(
             # CMD 0x42 = historical data (use LAST entry which is most recent)
             # CMD 0x43 = real-time data (use first/only entry)
             if cmd == 0x42 and isinstance(sensor_data, list) and len(sensor_data) > 1:
-                # For historical data (CMD 0x42), use the LAST (most recent) reading
                 data = sensor_data[-1]
-                _LOGGER.debug(f"[TLV] CMD 0x42: Using most recent historical data (entry {len(sensor_data)} of {len(sensor_data)})")
+                _LOGGER.info(
+                    f"[TLV] CMD 0x42: {len(sensor_data)} history points, "
+                    f"importing to statistics, using latest for entity state"
+                )
+                sensor_map = {}
+                sample = sensor_data[0]
+                if "temperature" in sample:
+                    sensor_map["temperature"] = ("Temperature", "°C")
+                if "humidity" in sample:
+                    sensor_map["humidity"] = ("Humidity", "%")
+                if "co2" in sample:
+                    sensor_map["co2"] = ("CO2", "ppm")
+                if "pressure" in sample:
+                    sensor_map["pressure"] = ("Pressure", "kPa")
+                if sensor_map:
+                    hass.async_create_task(
+                        _import_batch_statistics(
+                            hass, mac, name, sensor_data, sensor_map
+                        )
+                    )
             else:
-                # For current/real-time data, use first entry
                 data = sensor_data[0] if isinstance(sensor_data, list) else sensor_data
             if model in ["CGR1W", "CGR1PW"]:
                 all_sensors = sensors[3:]
