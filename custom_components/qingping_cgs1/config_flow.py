@@ -206,30 +206,31 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Manage the options."""
         if user_input is not None:
-            # Update the config entry data (model)
+            # Update model in entry data
             new_data = {
                 **self.config_entry.data,
                 CONF_MODEL: user_input[CONF_MODEL],
             }
             self.hass.config_entries.async_update_entry(
-                self.config_entry,
-                data=new_data,
-                options={
-                    CONF_AUTO_SWITCH_REPORT_MODE: user_input.get(
-                        CONF_AUTO_SWITCH_REPORT_MODE,
-                        DEFAULT_AUTO_SWITCH_REPORT_MODE,
-                    ),
-                    CONF_OFFLINE_TIMEOUT_MINUTES: user_input.get(
-                        CONF_OFFLINE_TIMEOUT_MINUTES,
-                        DEFAULT_OFFLINE_TIMEOUT_MINUTES,
-                    ),
-                },
+                self.config_entry, data=new_data,
             )
 
             # Reload the integration to apply changes
-            await self.hass.config_entries.async_reload(self._config_entry_id)
+            await self.hass.config_entries.async_reload(
+                self.config_entry.entry_id
+            )
 
-            return self.async_create_entry(title="", data={})
+            # Return options via async_create_entry (this sets config_entry.options)
+            return self.async_create_entry(title="", data={
+                CONF_AUTO_SWITCH_REPORT_MODE: user_input.get(
+                    CONF_AUTO_SWITCH_REPORT_MODE,
+                    DEFAULT_AUTO_SWITCH_REPORT_MODE,
+                ),
+                CONF_OFFLINE_TIMEOUT_MINUTES: user_input.get(
+                    CONF_OFFLINE_TIMEOUT_MINUTES,
+                    DEFAULT_OFFLINE_TIMEOUT_MINUTES,
+                ),
+            })
 
         return self.async_show_form(
             step_id="init",
