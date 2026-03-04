@@ -486,48 +486,130 @@ async def async_setup_entry(
                 _LOGGER.debug("No valid sensorData in payload, possibly a config response or device just powered on")
                 # Device is online, just waiting for sensor data
                 return
-            #if len(sensor_data) == 1:
-            if message_type not in [17, 13, "17", "13"]:
-                #ignore type 17 sensor data                
-                for data in sensor_data:
-                    battery_charging = None
-                    battery_status = None
-                    if SENSOR_BATTERY in data:
-                        battery_data = data[SENSOR_BATTERY]
-                        if isinstance(battery_data, dict):
-                            battery_status = battery_data.get("status")
-                            if battery_status is not None:
-                                battery_charging = (battery_status == 1)  # Explicitly True or False
-                    
-                    # Update battery state sensor first if we have status
-                    if battery_status is not None and battery_state.hass:
-                        battery_state.update_battery_state(battery_status)
-                    
-                    for sensor in sensors[5:]:  # Skip status, firmware, mac, type, and battery_state sensors
-                        if not sensor.hass:
-                            continue
-                        if sensor._sensor_type in data:
-                            sensor_data = data[sensor._sensor_type]
-                            if isinstance(sensor_data, dict):
-                                value = sensor_data.get("value")
-                                status = sensor_data.get("status")
-                                # Check if PM sensor is disabled (value=99999)
-                                if sensor._sensor_type in [SENSOR_PM10, SENSOR_PM25] and value == 99999:
-                                    sensor.set_unavailable()
-                                elif value is not None:
-                                    sensor.update_from_latest_data(value)
-                                    if sensor._sensor_type == SENSOR_BATTERY and battery_charging is not None:
-                                        sensor.update_battery_charging(battery_charging)
-                            else:
-                                # Handle non-dict values (backward compatibility)
-                                value = sensor_data
-                                if value is not None:
-                                    sensor.update_from_latest_data(value)
-                                    if sensor._sensor_type == SENSOR_BATTERY and battery_charging is not None:
-                                        sensor.update_battery_charging(battery_charging)
-            else:
-                _LOGGER.info("sensorData is type 17")
+            if message_type in [13, "13"]:
+                _LOGGER.debug("Type 13 message ignored for device %s", mac)
                 return
+
+            if message_type in [17, "17"]:
+                _LOGGER.info(
+                    "Type 17 batch data received for %s: %d points",
+                    mac, len(sensor_data),
+                )
+                latest = sensor_data[-1]
+                battery_charging = None
+                battery_status = None
+                if SENSOR_BATTERY in latest:
+                    battery_data = latest[SENSOR_BATTERY]
+                    if isinstance(battery_data, dict):
+                        battery_status = battery_data.get("status")
+                        if battery_status is not None:
+                            battery_charging = (battery_status == 1)
+
+                if battery_status is not None and battery_state.hass:
+                    battery_state.update_battery_state(battery_status)
+
+                for sensor in sensors[5:]:
+                    if not sensor.hass:
+                        continue
+                    if sensor._sensor_type in latest:
+                        s_data = latest[sensor._sensor_type]
+                        if isinstance(s_data, dict):
+                            value = s_data.get("value")
+                            if value is not None:
+                                sensor.update_from_latest_data(value)
+                                if sensor._sensor_type == SENSOR_BATTERY and battery_charging is not None:
+                                    sensor.update_battery_charging(battery_charging)
+                        elif s_data is not None:
+                            sensor.update_from_latest_data(s_data)
+
+                batch_points = []
+                for item in sensor_data:
+                    point = {}
+                    ts_data = item.get("timestamp", {})
+                    if isinstance(ts_data, dict):
+                        ts = ts_data.get("value", 0)
+                    else:
+                        ts = int(ts_data) if ts_data else 0
+                    if ts == 0:
+                        continue
+                    point["timestamp"] = ts
+                    for key in ["temperature", "humidity", "co2", "pm25", "pm10", "tvoc"]:
+                        if key in item:
+                            s_data = item[key]
+                            if isinstance(s_data, dict):
+                                val = s_data.get("value")
+                                if val is not None:
+                                    point[key] = float(val)
+                            elif s_data is not None:
+                                point[key] = float(s_data)
+                    batch_points.append(point)
+
+                if batch_points:
+                    sensor_map = {}
+                    sample = batch_points[0]
+                    if "temperature" in sample:
+                        sensor_map["temperature"] = ("Temperature", "°C")
+                    if "humidity" in sample:
+                        sensor_map["humidity"] = ("Humidity", "%")
+                    if "co2" in sample:
+                        sensor_map["co2"] = ("CO2", "ppm")
+                    if "pm25" in sample:
+                        sensor_map["pm25"] = ("PM2.5", "µg/m³")
+                    if "pm10" in sample:
+                        sensor_map["pm10"] = ("PM10", "µg/m³")
+                    if "tvoc" in sample:
+                        sensor_map["tvoc"] = ("TVOC", "ppb")
+                    if sensor_map:
+                        hass.async_create_task(
+                            _import_batch_statistics(
+                                hass, mac, name, batch_points, sensor_map,
+                            )
+                        )
+
+                if payload.get("need_ack") == 1:
+                    ack_payload = json.dumps({"type": "17", "ack": 1})
+                    ack_topic = f"{MQTT_TOPIC_PREFIX}/{mac}/down"
+                    hass.async_create_task(
+                        mqtt.async_publish(hass, ack_topic, ack_payload)
+                    )
+                    _LOGGER.info("Sent ACK for type 17 batch data to %s", mac)
+
+                return
+
+            # Type 12 and other standard sensor data
+            for data in sensor_data:
+                battery_charging = None
+                battery_status = None
+                if SENSOR_BATTERY in data:
+                    battery_data = data[SENSOR_BATTERY]
+                    if isinstance(battery_data, dict):
+                        battery_status = battery_data.get("status")
+                        if battery_status is not None:
+                            battery_charging = (battery_status == 1)
+
+                if battery_status is not None and battery_state.hass:
+                    battery_state.update_battery_state(battery_status)
+
+                for sensor in sensors[5:]:
+                    if not sensor.hass:
+                        continue
+                    if sensor._sensor_type in data:
+                        s_data = data[sensor._sensor_type]
+                        if isinstance(s_data, dict):
+                            value = s_data.get("value")
+                            status = s_data.get("status")
+                            if sensor._sensor_type in [SENSOR_PM10, SENSOR_PM25] and value == 99999:
+                                sensor.set_unavailable()
+                            elif value is not None:
+                                sensor.update_from_latest_data(value)
+                                if sensor._sensor_type == SENSOR_BATTERY and battery_charging is not None:
+                                    sensor.update_battery_charging(battery_charging)
+                        else:
+                            value = s_data
+                            if value is not None:
+                                sensor.update_from_latest_data(value)
+                                if sensor._sensor_type == SENSOR_BATTERY and battery_charging is not None:
+                                    sensor.update_battery_charging(battery_charging)
 
         except json.JSONDecodeError:
             _LOGGER.error("Invalid JSON in MQTT message: %s", message.payload)
