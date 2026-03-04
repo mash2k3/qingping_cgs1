@@ -35,7 +35,7 @@ async def test_import_batch_statistics_creates_correct_metadata(hass):
         temp_call = mock_import.call_args_list[0]
         metadata = temp_call[0][1]
         assert metadata.source == "qingping_cgs1"
-        assert metadata.statistic_id == "qingping_cgs1:582D348611F9_temperature"
+        assert metadata.statistic_id == "qingping_cgs1:582d348611f9_temperature"
         assert metadata.unit_of_measurement == "°C"
         assert metadata.has_mean is True
         assert metadata.has_sum is False

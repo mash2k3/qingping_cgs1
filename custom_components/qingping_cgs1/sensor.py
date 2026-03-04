@@ -305,7 +305,7 @@ async def _import_batch_statistics(
             has_sum=False,
             name=f"{device_name} {display_name}",
             source="qingping_cgs1",
-            statistic_id=f"qingping_cgs1:{mac}_{sensor_key}",
+            statistic_id=f"qingping_cgs1:{mac.lower()}_{sensor_key}",
             unit_of_measurement=unit,
         )
         async_import_statistics(hass, metadata, statistics)
