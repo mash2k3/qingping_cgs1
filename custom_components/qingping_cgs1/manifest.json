@@ -1,12 +1,12 @@
 {
   "domain": "qingping_cgs1",
-  "name": "Qingping",
-  "codeowners": ["@mash2k3"],
+  "name": "Qingping (Private Fork)",
+  "codeowners": ["@mash2k3", "@wxtry"],
   "config_flow": true,
-  "dependencies": ["mqtt"],
-  "documentation": "https://github.com/mash2k3/qingping_cgs1",
+  "dependencies": ["mqtt", "recorder"],
+  "documentation": "https://forgejo.home.1nf.pw/wxtry/qingping_cgs1",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/mash2k3/qingping_cgs1/issues",
+  "issue_tracker": "https://forgejo.home.1nf.pw/wxtry/qingping_cgs1/issues",
   "requirements": [],
-  "version": "1.2.9"
+  "version": "1.3.0-fork.1"
 }
