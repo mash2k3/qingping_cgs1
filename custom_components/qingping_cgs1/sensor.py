@@ -674,10 +674,17 @@ class QingpingDeviceStatusSensor(CoordinatorEntity, SensorEntity):
         # Determine timeout based on device type and mode
         if model in TLV_MODELS:
             report_mode = self.coordinator.data.get(CONF_REPORT_MODE, REPORT_MODE_HISTORIC)
-            timeout = OFFLINE_TIMEOUT_REALTIME if report_mode == REPORT_MODE_REALTIME else OFFLINE_TIMEOUT_HISTORIC
+            if report_mode == REPORT_MODE_REALTIME:
+                timeout = OFFLINE_TIMEOUT_REALTIME
+            else:
+                timeout = self._config_entry.options.get(
+                    CONF_OFFLINE_TIMEOUT_MINUTES, DEFAULT_OFFLINE_TIMEOUT_MINUTES
+                ) * 60
         else:
-            # JSON devices use standard timeout
-            timeout = OFFLINE_TIMEOUT_REALTIME
+            # JSON devices: use configurable timeout
+            timeout = self._config_entry.options.get(
+                CONF_OFFLINE_TIMEOUT_MINUTES, DEFAULT_OFFLINE_TIMEOUT_MINUTES
+            ) * 60
         
         current_time = int(time.time())
         time_since_last_msg = current_time - self._last_timestamp
@@ -686,21 +693,23 @@ class QingpingDeviceStatusSensor(CoordinatorEntity, SensorEntity):
         if self._attr_native_value != new_status:
             old_status = self._attr_native_value
             self._attr_native_value = new_status
-            self.async_write_ha_state()
-            _LOGGER.info("Device %s status changed from %s to %s (time since last message: %s seconds, timeout: %s)", 
+            if self.entity_id:
+                self.async_write_ha_state()
+            _LOGGER.info("Device %s status changed from %s to %s (time since last message: %s seconds, timeout: %s)",
                         self._mac, old_status, new_status, time_since_last_msg, timeout)
-            
+
             # Update other sensors' availability
-            sensors = self.hass.data[DOMAIN][self._config_entry.entry_id].get("sensors", [])
-            for sensor in sensors:
-                if isinstance(sensor, QingpingDeviceSensor) and sensor.hass:
-                    sensor.async_write_ha_state()
-            
+            if DOMAIN in self.hass.data and self._config_entry.entry_id in self.hass.data[DOMAIN]:
+                sensors = self.hass.data[DOMAIN][self._config_entry.entry_id].get("sensors", [])
+                for sensor in sensors:
+                    if isinstance(sensor, QingpingDeviceSensor) and sensor.hass and sensor.entity_id:
+                        sensor.async_write_ha_state()
+
             # Call publish_config when status changes from offline to online
             if self._last_status == "offline" and new_status == "online":
                 _LOGGER.info("Device %s recovered from offline, publishing config", self._mac)
                 asyncio.create_task(self._publish_config_on_status_change())
-            
+
             self._last_status = new_status
 
     async def _publish_config_on_status_change(self):
