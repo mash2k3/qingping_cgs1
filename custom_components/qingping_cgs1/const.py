@@ -43,7 +43,7 @@ REPORT_MODE_REALTIME = "realtime"
 
 # Default values for offsets and update interval
 DEFAULT_OFFSET = 0
-DEFAULT_UPDATE_INTERVAL = 15
+DEFAULT_UPDATE_INTERVAL = 300  # 5 minutes (was 15 seconds)
 
 # MQTT topics
 MQTT_TOPIC_PREFIX = "qingping"

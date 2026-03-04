@@ -27,7 +27,9 @@ from .const import (
     CONF_REPORT_INTERVAL, CONF_SAMPLE_INTERVAL,
     ATTR_TYPE, ATTR_UP_ITVL, ATTR_DURATION,
     DEFAULT_TYPE, DEFAULT_DURATION, TLV_MODELS, JSON_MODELS,
-    CONF_REPORT_MODE, REPORT_MODE_HISTORIC, REPORT_MODE_REALTIME
+    CONF_REPORT_MODE, REPORT_MODE_HISTORIC, REPORT_MODE_REALTIME,
+    CONF_AUTO_SWITCH_REPORT_MODE, DEFAULT_AUTO_SWITCH_REPORT_MODE,
+    CONF_OFFLINE_TIMEOUT_MINUTES, DEFAULT_OFFLINE_TIMEOUT_MINUTES,
 )
 from .tlv_decoder import tlv_decode, is_tlv_format
 from .tlv_encoder import tlv_encode, int_to_bytes_little_endian
@@ -55,13 +57,20 @@ async def _auto_switch_report_mode_on_battery_state(hass, config_entry, mac, is_
     """Automatically switch report mode based on battery charging state."""
     if model not in ["CGP22C", "CGP23W", "CGP22W"]:
         return
-    
+
+    # Check if auto-switch is enabled in options
+    auto_switch = config_entry.options.get(
+        CONF_AUTO_SWITCH_REPORT_MODE, DEFAULT_AUTO_SWITCH_REPORT_MODE
+    )
+    if not auto_switch:
+        _LOGGER.debug(f"[{mac}] Auto-switch report mode disabled, skipping")
+        return
+
     from .tlv_encoder import tlv_encode, int_to_bytes_little_endian
-    from .const import CONF_REPORT_MODE, REPORT_MODE_HISTORIC, REPORT_MODE_REALTIME
-    
+
     # Get coordinator
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
-    
+
     # Determine mode based on charging state
     if is_charging:
         # Real-time mode when charging
@@ -77,23 +86,15 @@ async def _auto_switch_report_mode_on_battery_state(hass, config_entry, mac, is_
         }
         mode_name = "HISTORIC (on battery)"
         new_mode = REPORT_MODE_HISTORIC
-    
+
     payload = tlv_encode(0x32, packets)
     topic = f"qingping/{mac}/down"
-    
+
     await mqtt.async_publish(hass, topic, payload)
-    
+
     # Update coordinator data
     coordinator.data[CONF_REPORT_MODE] = new_mode
-    
-    # Update config entry data
-    new_data = dict(config_entry.data)
-    new_data[CONF_REPORT_MODE] = new_mode
-    hass.config_entries.async_update_entry(config_entry, data=new_data)
-    
-    # Refresh coordinator to update all entities
-    await coordinator.async_request_refresh()
-    
+
     _LOGGER.info(f"[{mac}] Auto-switched to {mode_name} based on battery state (timeout: {'5min' if is_charging else '15min'})")
     
 async def publish_setting_change(hass: HomeAssistant, mac: str, setting_key: str, value: any) -> None:
@@ -233,7 +234,7 @@ async def _send_initial_tlv_config(hass, config_entry, mac, model):
     
     # Set default values in config entry
     new_data = dict(config_entry.data)
-    new_data[CONF_REPORT_MODE] = REPORT_MODE_REALTIME  # Real-time by default
+    new_data[CONF_REPORT_MODE] = REPORT_MODE_HISTORIC  # Historic by default (fork change)
     new_data[CONF_REPORT_INTERVAL] = 10  # 10 minutes (minimum)
     new_data[CONF_SAMPLE_INTERVAL] = 60  # 60 seconds
     new_data[CONF_TEMPERATURE_UNIT] = temp_unit
@@ -246,7 +247,7 @@ async def _send_initial_tlv_config(hass, config_entry, mac, model):
     
     # Send default configuration commands
     packets = {
-        0x42: int_to_bytes_little_endian(21600, 2),  # Real-time for 6 hours
+        0x42: int_to_bytes_little_endian(0, 2),  # Historic mode (fork change)
         0x19: bytes([1 if temp_unit == "fahrenheit" else 0])  # Temperature unit
     }
     
@@ -258,7 +259,7 @@ async def _send_initial_tlv_config(hass, config_entry, mac, model):
     topic = f"qingping/{mac}/down"
     
     await mqtt.async_publish(hass, topic, payload)
-    _LOGGER.info(f"[{mac}] Initial config sent: Real-time mode, temp unit: {temp_unit}")
+    _LOGGER.info(f"[{mac}] Initial config sent: Historic mode, temp unit: {temp_unit}")
 
 
 async def async_setup_entry(
