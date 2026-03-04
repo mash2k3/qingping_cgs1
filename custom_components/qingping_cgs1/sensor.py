@@ -280,9 +280,14 @@ async def _import_batch_statistics(
     batch_data: list[dict],
     sensor_mappings: dict[str, tuple[str, str]],
 ) -> None:
-    """Import batch sensor data into HA long-term statistics."""
+    """Import batch sensor data into HA long-term statistics.
+
+    HA requires timestamps aligned to the top of the hour.
+    Multiple data points within the same hour are averaged.
+    """
     for sensor_key, (display_name, unit) in sensor_mappings.items():
-        statistics = []
+        # Group values by hour
+        hourly_buckets: dict[int, list[float]] = {}
         for point in batch_data:
             if sensor_key not in point:
                 continue
@@ -290,15 +295,22 @@ async def _import_batch_statistics(
             if ts == 0:
                 continue
             value = float(point[sensor_key])
-            aligned_ts = ts - (ts % 300)
-            statistics.append(StatisticData(
-                start=datetime.fromtimestamp(aligned_ts, tz=timezone.utc),
-                mean=value,
-                state=value,
-            ))
+            hour_ts = ts - (ts % 3600)  # Floor to hour boundary
+            hourly_buckets.setdefault(hour_ts, []).append(value)
 
-        if not statistics:
+        if not hourly_buckets:
             continue
+
+        # Build one StatisticData per hour with averaged values
+        statistics = []
+        for hour_ts in sorted(hourly_buckets):
+            values = hourly_buckets[hour_ts]
+            mean_val = sum(values) / len(values)
+            statistics.append(StatisticData(
+                start=datetime.fromtimestamp(hour_ts, tz=timezone.utc),
+                mean=mean_val,
+                state=mean_val,
+            ))
 
         metadata = StatisticMetaData(
             has_mean=True,
