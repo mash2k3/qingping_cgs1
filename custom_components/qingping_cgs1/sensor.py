@@ -37,6 +37,75 @@ from .tlv_encoder import tlv_encode, int_to_bytes_little_endian
 
 _LOGGER = logging.getLogger(__name__)
 
+INFLUXDB_DOMAIN = "influxdb"
+
+
+def _get_influxdb_write(hass: HomeAssistant):
+    """Get InfluxDB write callable if the integration is active.
+
+    Returns the write function from HA's built-in InfluxDB integration,
+    or None if InfluxDB is not configured.
+    """
+    influx_instance = hass.data.get(INFLUXDB_DOMAIN)
+    if influx_instance and hasattr(influx_instance, "influx"):
+        return influx_instance.influx.write
+    return None
+
+
+async def _write_batch_to_influxdb(
+    hass: HomeAssistant,
+    batch_data: list[dict],
+    entity_id_map: dict[str, str],
+) -> None:
+    """Write batch historical data to InfluxDB with original timestamps.
+
+    Reuses HA's InfluxDB integration connection. Does nothing if InfluxDB
+    is not configured. Points are written with their original device
+    timestamps so Grafana shows a continuous timeline.
+    """
+    write_fn = _get_influxdb_write(hass)
+    if not write_fn:
+        return
+
+    points = []
+    for point in batch_data:
+        ts = point.get("timestamp", 0)
+        if ts == 0:
+            continue
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+
+        for sensor_key, entity_id in entity_id_map.items():
+            if sensor_key not in point:
+                continue
+            value = float(point[sensor_key])
+            domain, object_id = entity_id.split(".", 1)
+            points.append({
+                "measurement": "state",
+                "tags": {
+                    "domain": domain,
+                    "entity_id": object_id,
+                    "source": "ha",
+                },
+                "time": dt,
+                "fields": {
+                    "value": value,
+                    "state": str(value),
+                },
+            })
+
+    if not points:
+        return
+
+    try:
+        await hass.async_add_executor_job(write_fn, points)
+        _LOGGER.info(
+            "Wrote %d historical points to InfluxDB for %d sensors",
+            len(points), len(entity_id_map),
+        )
+    except Exception as err:
+        _LOGGER.warning("Failed to write batch to InfluxDB: %s", err)
+
+
 class StatisticData(dict):
     """Dict subclass with attribute access for HA statistics compatibility."""
     __getattr__ = dict.__getitem__
@@ -583,6 +652,16 @@ async def async_setup_entry(
                                 hass, mac, name, batch_points, sensor_map,
                             )
                         )
+                        # Also write to InfluxDB with original timestamps
+                        entity_id_map = {
+                            s._sensor_type: s.entity_id
+                            for s in sensors[4:]
+                            if hasattr(s, '_sensor_type') and s.entity_id and s._sensor_type in sensor_map
+                        }
+                        if entity_id_map:
+                            hass.async_create_task(
+                                _write_batch_to_influxdb(hass, batch_points, entity_id_map)
+                            )
 
                 if payload.get("need_ack") == 1:
                     ack_payload = json.dumps({"type": "17", "ack": 1})
@@ -718,6 +797,17 @@ async def async_setup_entry(
                             hass, mac, name, sensor_data, sensor_map
                         )
                     )
+                    # Also write to InfluxDB with original timestamps
+                    _tlv_sensors = sensors[3:] if model in ["CGR1W", "CGR1PW"] else sensors[4:]
+                    entity_id_map = {
+                        s._sensor_type: s.entity_id
+                        for s in _tlv_sensors
+                        if hasattr(s, '_sensor_type') and s.entity_id and s._sensor_type in sensor_map
+                    }
+                    if entity_id_map:
+                        hass.async_create_task(
+                            _write_batch_to_influxdb(hass, sensor_data, entity_id_map)
+                        )
             else:
                 data = sensor_data[0] if isinstance(sensor_data, list) else sensor_data
             if model in ["CGR1W", "CGR1PW"]:
