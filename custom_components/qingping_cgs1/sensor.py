@@ -640,7 +640,7 @@ async def async_setup_entry(
             cmd = message.payload[2] if len(message.payload) > 2 else 0
             # Map CMD codes to descriptions for logging
             cmd_names = {
-                0x31: "Unknown/Reserved",
+                0x31: "Historical Data (fw 2.x)",
                 0x32: "Configuration",
                 0x34: "Event Reporting",
                 0x35: "Button Press",
@@ -693,12 +693,13 @@ async def async_setup_entry(
             
             # IMPORTANT: Prioritize current data based on CMD type
             # CMD 0x41 = current reading (use first/only entry)
-            # CMD 0x42 = historical data (use LAST entry which is most recent)
+            # CMD 0x42 = historical data (fw <=1.x, use LAST entry which is most recent)
+            # CMD 0x31 = historical data (fw >=2.x, same format as 0x42)
             # CMD 0x43 = real-time data (use first/only entry)
-            if cmd == 0x42 and isinstance(sensor_data, list) and len(sensor_data) > 1:
+            if cmd in (0x42, 0x31) and isinstance(sensor_data, list) and len(sensor_data) > 1:
                 data = sensor_data[-1]
                 _LOGGER.info(
-                    f"[TLV] CMD 0x42: {len(sensor_data)} history points, "
+                    f"[TLV] CMD 0x{cmd:02x}: {len(sensor_data)} history points, "
                     f"importing to statistics, using latest for entity state"
                 )
                 sensor_map = {}
