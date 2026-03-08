@@ -55,13 +55,16 @@ def _get_influxdb_write(hass: HomeAssistant):
 async def _write_batch_to_influxdb(
     hass: HomeAssistant,
     batch_data: list[dict],
-    entity_id_map: dict[str, str],
+    entity_id_map: dict[str, tuple[str, str]],
 ) -> None:
     """Write batch historical data to InfluxDB with original timestamps.
 
     Reuses HA's InfluxDB integration connection. Does nothing if InfluxDB
     is not configured. Points are written with their original device
     timestamps so Grafana shows a continuous timeline.
+
+    entity_id_map: {sensor_key: (entity_id, unit)} where unit is used as
+    the InfluxDB measurement name to match HA's default behavior.
     """
     write_fn = _get_influxdb_write(hass)
     if not write_fn:
@@ -74,13 +77,13 @@ async def _write_batch_to_influxdb(
             continue
         dt = datetime.fromtimestamp(ts, tz=timezone.utc)
 
-        for sensor_key, entity_id in entity_id_map.items():
+        for sensor_key, (entity_id, unit) in entity_id_map.items():
             if sensor_key not in point:
                 continue
             value = float(point[sensor_key])
             domain, object_id = entity_id.split(".", 1)
             points.append({
-                "measurement": "state",
+                "measurement": unit,
                 "tags": {
                     "domain": domain,
                     "entity_id": object_id,
@@ -95,6 +98,13 @@ async def _write_batch_to_influxdb(
 
     if not points:
         return
+
+    # Debug: log what we're about to write
+    sample = points[0] if points else {}
+    _LOGGER.info(
+        "InfluxDB batch: %d points, sample measurement=%s entity_id=%s time=%s",
+        len(points), sample.get("measurement"), sample.get("tags", {}).get("entity_id"), sample.get("time"),
+    )
 
     try:
         await hass.async_add_executor_job(write_fn, points)
@@ -653,8 +663,9 @@ async def async_setup_entry(
                             )
                         )
                         # Also write to InfluxDB with original timestamps
+                        # Use sensor's actual unit as measurement name to match HA's InfluxDB format
                         entity_id_map = {
-                            s._sensor_type: s.entity_id
+                            s._sensor_type: (s.entity_id, s._attr_native_unit_of_measurement or sensor_map[s._sensor_type][1])
                             for s in sensors[4:]
                             if hasattr(s, '_sensor_type') and s.entity_id and s._sensor_type in sensor_map
                         }
@@ -798,9 +809,10 @@ async def async_setup_entry(
                         )
                     )
                     # Also write to InfluxDB with original timestamps
+                    # Use sensor's actual unit as measurement name to match HA's InfluxDB format
                     _tlv_sensors = sensors[3:] if model in ["CGR1W", "CGR1PW"] else sensors[4:]
                     entity_id_map = {
-                        s._sensor_type: s.entity_id
+                        s._sensor_type: (s.entity_id, s._attr_native_unit_of_measurement or sensor_map[s._sensor_type][1])
                         for s in _tlv_sensors
                         if hasattr(s, '_sensor_type') and s.entity_id and s._sensor_type in sensor_map
                     }
