@@ -99,16 +99,9 @@ async def _write_batch_to_influxdb(
     if not points:
         return
 
-    # Debug: log what we're about to write
-    sample = points[0] if points else {}
-    _LOGGER.info(
-        "InfluxDB batch: %d points, sample measurement=%s entity_id=%s time=%s",
-        len(points), sample.get("measurement"), sample.get("tags", {}).get("entity_id"), sample.get("time"),
-    )
-
     try:
         await hass.async_add_executor_job(write_fn, points)
-        _LOGGER.info(
+        _LOGGER.debug(
             "Wrote %d historical points to InfluxDB for %d sensors",
             len(points), len(entity_id_map),
         )
