@@ -153,6 +153,7 @@ If you encounter any issues:
 ## Contributing
 
 Contributions to this project are welcome! Please feel free to submit a Pull Request.
+Buy me a coffee: https://buymeacoffee.com/mash2k3
 
 ## Support
 
