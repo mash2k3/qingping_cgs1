@@ -5,6 +5,8 @@ import voluptuous as vol
 import logging
 from typing import Any
 import asyncio
+import json
+import time
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_MAC, CONF_NAME, CONF_MODEL
@@ -16,6 +18,7 @@ from homeassistant.exceptions import HomeAssistantError
 from .const import DOMAIN, MQTT_TOPIC_PREFIX, QP_MODELS, DEFAULT_MODEL
 
 _LOGGER = logging.getLogger(__name__)
+DISCOVERY_CACHE_TTL = 24 * 60 * 60  # 24 hours
 
 def clean_mac_address(mac: str) -> str:
     """Remove colons from MAC address if present."""
@@ -145,49 +148,106 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
     async def _async_discover_devices(self):
-        """Discover available Qingping CGxx devices via MQTT."""
+        """Discover available Qingping devices via MQTT and keep a cache of discovered BLE devices."""
         try:
-            # Get list of already configured devices
             configured_devices = {
                 entry.unique_id for entry in self._async_current_entries()
             }
 
+            domain_data = self.hass.data.setdefault(DOMAIN, {})
+            discovered_cache = domain_data.setdefault("discovered_devices_cache", {})
+            now = time.time()
+
+            # Cleanup old cache entries
+            expired = [
+                mac for mac, info in discovered_cache.items()
+                if now - info.get("last_seen", 0) > DISCOVERY_CACHE_TTL
+            ]
+            for mac in expired:
+                discovered_cache.pop(mac, None)
+
+            # Seed current discovery dialog from cache
+            self._discovered_devices = {
+                mac: info["name"]
+                for mac, info in discovered_cache.items()
+                if mac not in configured_devices
+            }
+
+            def _remember_device(mac: str, device_name: str) -> None:
+                discovered_cache[mac] = {
+                    "name": device_name,
+                    "last_seen": time.time(),
+                }
+                if mac not in configured_devices:
+                    self._discovered_devices[mac] = device_name
+
             def _handle_message(msg):
                 """Handle received MQTT messages."""
                 try:
-                    # Extract MAC address from the topic (works for both JSON and TLV)
-                    # Topic format: qingping/{MAC}/up
-                    topic_parts = msg.topic.split('/')
-                    if len(topic_parts) >= 2:
-                        mac = clean_mac_address(topic_parts[-2])
-                        if mac and mac not in configured_devices and mac not in self._discovered_devices:
-                            # Check if it's TLV format (binary starting with 'CG')
-                            if msg.payload[:2] == b'CG':
+                    mac = None
+                    device_name = None
+
+                    # TLV devices published directly
+                    if msg.payload[:2] == b"CG":
+                        topic_parts = msg.topic.split("/")
+                        if len(topic_parts) >= 3:
+                            mac = clean_mac_address(topic_parts[-2])
+                            if mac:
                                 device_name = f"Qingping TLV Device ({mac})"
-                            else:
-                                # JSON format
-                                device_name = f"Qingping JSON ({mac})"
-                            
-                            self._discovered_devices[mac] = device_name
-                            _LOGGER.info(f"Discovered device: {device_name}")
+
+                    else:
+                        try:
+                            payload = json.loads(msg.payload.decode("utf-8", errors="ignore"))
+                        except Exception:
+                            return
+
+                        msg_type = str(payload.get("type", ""))
+
+                        # BLE relay packet from gateway
+                        if msg_type == "9" and payload.get("mac") and payload.get("adv_data"):
+                            mac = clean_mac_address(payload["mac"])
+                            if mac:
+                                device_name = f"Qingping BLE Device ({mac})"
+
+                        # Regular JSON devices
+                        else:
+                            topic_parts = msg.topic.split("/")
+                            if len(topic_parts) >= 3:
+                                topic_mac = clean_mac_address(topic_parts[-2])
+                                if topic_mac and msg_type in {"13", "15", "17", "21", "25", "26", "27"}:
+                                    mac = topic_mac
+                                    device_name = f"Qingping JSON ({mac})"
+
+                    if mac and device_name:
+                        was_known = mac in self._discovered_devices
+                        _remember_device(mac, device_name)
+                        if not was_known and mac not in configured_devices:
+                            _LOGGER.info("Discovered device: %s", device_name)
+
                 except Exception as ex:
                     _LOGGER.error("Error handling MQTT message: %s", ex)
 
-            # Subscribe to the MQTT topic
-            await mqtt.async_subscribe(
+            unsubscribe = await mqtt.async_subscribe(
                 self.hass, f"{MQTT_TOPIC_PREFIX}/#", _handle_message, 1, encoding=None
             )
 
-            # Wait for a short time to collect messages
-            await asyncio.sleep(10)  # Wait 10 seconds to collect messages
+            try:
+                # Short live scan window for newly arrived packets.
+                # Previously seen devices are still shown from cache.
+                await asyncio.sleep(10)
+            finally:
+                unsubscribe()
 
-            _LOGGER.info(f"Discovered {len(self._discovered_devices)} new Qingping devices (JSON + TLV)")
+            _LOGGER.info(
+                "Discovered %s Qingping devices (including cached BLE devices)",
+                len(self._discovered_devices),
+            )
 
         except HomeAssistantError as ex:
             _LOGGER.error("Error discovering Qingping devices: %s", ex)
         except Exception as ex:
             _LOGGER.error("Unexpected error in device discovery: %s", ex)
-
+    
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):

@@ -13,7 +13,7 @@ from homeassistant.helpers.entity import EntityCategory
 from .const import (
     DOMAIN, CONF_TVOC_UNIT, CONF_ETVOC_UNIT, CONF_SCREENSAVER_TYPE,
     CONF_REPORT_MODE, REPORT_MODE_HISTORIC, REPORT_MODE_REALTIME, TLV_MODELS,
-    CONF_TEMPERATURE_UNIT
+    CONF_TEMPERATURE_UNIT, ADV_MODELS
 )
 from .tlv_encoder import tlv_encode
 
@@ -54,6 +54,8 @@ async def async_setup_entry(
     mac = config_entry.data[CONF_MAC]
     name = config_entry.data[CONF_NAME]
     model = config_entry.data[CONF_MODEL]
+    if model in ADV_MODELS:
+        return
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
     native_temp_unit = hass.config.units.temperature_unit

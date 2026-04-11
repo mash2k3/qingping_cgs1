@@ -18,7 +18,7 @@ from .const import (
     CONF_NOISE_OFFSET, CONF_TVOC_OFFSET, CONF_TVOC_INDEX_OFFSET, CONF_PRESSURE_OFFSET,
     CONF_POWER_OFF_TIME, CONF_AUTO_SLIDING_TIME, DEFAULT_SENSOR_OFFSET,
     CONF_SCREENSAVER_TYPE, CONF_TIMEZONE,
-    TLV_MODELS, JSON_MODELS
+    TLV_MODELS, JSON_MODELS, ADV_MODELS
 )
 from .tlv_encoder import tlv_encode, int_to_bytes_little_endian
 
@@ -31,6 +31,8 @@ async def async_setup_entry(
     mac = config_entry.data[CONF_MAC]
     name = config_entry.data[CONF_NAME]
     model = config_entry.data[CONF_MODEL]
+    if model in ADV_MODELS:
+        return
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
     native_temp_unit = hass.config.units.temperature_unit
 

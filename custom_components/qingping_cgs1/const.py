@@ -62,10 +62,12 @@ SENSOR_SIGNAL_STRENGTH = "signal_strength"
 # Device models
 # JSON format devices (old protocol)
 JSON_MODELS = ["CGS1", "CGS2", "CGDN1"]
-# TLV binary format devices (new protocol)
-TLV_MODELS = ["CGP22C", "CGP23W", "CGP22W","CGR1W", "CGR1PW"]
-# All supported models
-QP_MODELS = JSON_MODELS + TLV_MODELS
+
+TLV_MODELS = ["CGP22C", "CGP23W", "CGP22W", "CGR1W", "CGR1PW"]
+# NEW
+ADV_MODELS = ["CGDK2"]
+
+QP_MODELS = JSON_MODELS + TLV_MODELS + ADV_MODELS
 DEFAULT_MODEL = "CGS1"
 
 # Model to Product ID mapping (for TLV devices)

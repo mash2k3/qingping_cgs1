@@ -27,10 +27,12 @@ from .const import (
     CONF_REPORT_INTERVAL, CONF_SAMPLE_INTERVAL,
     ATTR_TYPE, ATTR_UP_ITVL, ATTR_DURATION,
     DEFAULT_TYPE, DEFAULT_DURATION, TLV_MODELS, JSON_MODELS,
-    CONF_REPORT_MODE, REPORT_MODE_HISTORIC, REPORT_MODE_REALTIME
+    CONF_REPORT_MODE, REPORT_MODE_HISTORIC, REPORT_MODE_REALTIME, ADV_MODELS
 )
 from .tlv_decoder import tlv_decode, is_tlv_format
 from .tlv_encoder import tlv_encode, int_to_bytes_little_endian
+
+from .adv_decoder import decode_qingping_adv_data
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -295,73 +297,166 @@ async def async_setup_entry(
     status_sensor = QingpingDeviceStatusSensor(coordinator, config_entry, mac, name, device_info)
     firmware_sensor = QingpingDeviceFirmwareSensor(coordinator, config_entry, mac, name, device_info)
     mac_sensor = QingpingDeviceMACSensor(coordinator, config_entry, mac, name, device_info)
-    battery_state = QingpingDeviceBatteryStateSensor(coordinator, config_entry, mac, name, device_info)
 
-    # Only create type_sensor for JSON devices (not TLV)
-    if model in JSON_MODELS:
-        type_sensor = QingpingDeviceTypeSensor(coordinator, config_entry, mac, name, device_info)
-        sensors = [
-            status_sensor,
-            firmware_sensor,
-            type_sensor,
-            mac_sensor,
-        ]
-    else:
-        # TLV devices - no type sensor
-        sensors = [
-            status_sensor,
-            firmware_sensor,
-            mac_sensor,
-        ]
+    type_sensor = None
+    battery_state = None
+    battery_sensor = None
+    temp_sensor = None
+    humidity_sensor = None
+    signal_sensor = None
 
-    #sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_BATTERY, "Battery", PERCENTAGE, SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT, device_info))
-    if model in ["CGS1", "CGS2", "CGDN1", "CGP22C", "CGP22W", "CGP23W"]:
-        sensors.append(battery_state)
-        battery_sensor = QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_BATTERY, "Battery", PERCENTAGE, SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT, device_info)
+    if model in ADV_MODELS:
+        battery_sensor = QingpingDeviceSensor(
+            coordinator, config_entry, mac, name,
+            SENSOR_BATTERY, "Battery", PERCENTAGE,
+            SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT, device_info
+        )
         battery_sensor._attr_entity_category = EntityCategory.DIAGNOSTIC
-        sensors.append(battery_sensor)
-    sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_TEMPERATURE, "Temperature", native_temp_unit, SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, device_info))
-    sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_HUMIDITY, "Humidity", PERCENTAGE, SensorDeviceClass.HUMIDITY, SensorStateClass.MEASUREMENT, device_info))
 
-    
-    # Add CO2 for models that have it
-    if model in ["CGS1", "CGS2", "CGDN1", "CGP22C", "CGR1W", "CGR1PW"]:
-        sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_CO2, "CO2", PPM, SensorDeviceClass.CO2, SensorStateClass.MEASUREMENT, device_info))
-    
-    # Add PM sensors only for models that have them
-    if model in ["CGS1", "CGS2", "CGDN1", "CGR1W", "CGR1PW"]:
-        sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_PM10, "PM10", CONCENTRATION, SensorDeviceClass.PM10, SensorStateClass.MEASUREMENT, device_info))
-        sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_PM25, "PM25", CONCENTRATION, SensorDeviceClass.PM25, SensorStateClass.MEASUREMENT, device_info))
-        
+        temp_sensor = QingpingDeviceSensor(
+            coordinator, config_entry, mac, name,
+            SENSOR_TEMPERATURE, "Temperature", native_temp_unit,
+            SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, device_info
+        )
 
+        humidity_sensor = QingpingDeviceSensor(
+            coordinator, config_entry, mac, name,
+            SENSOR_HUMIDITY, "Humidity", PERCENTAGE,
+            SensorDeviceClass.HUMIDITY, SensorStateClass.MEASUREMENT, device_info
+        )
 
-
-    if model == "CGS1":
-        sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_TVOC, "TVOC", PPB, SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS, SensorStateClass.MEASUREMENT, device_info))
-    elif model == "CGS2":
-        sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_ETVOC, "eTVOC", None, SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS, SensorStateClass.MEASUREMENT, device_info))
-        sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_NOISE, "Noise", DB, SensorDeviceClass.SOUND_PRESSURE, SensorStateClass.MEASUREMENT, device_info))
-    elif model == "CGP23W":  # NEW
-        sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_PRESSURE, "Pressure", "kPa", SensorDeviceClass.PRESSURE, SensorStateClass.MEASUREMENT, device_info))
-    elif model in ["CGR1W", "CGR1PW"]:  # NEW
-        sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_LIGHT, "Light", "lx", SensorDeviceClass.ILLUMINANCE, SensorStateClass.MEASUREMENT, device_info))
-        sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_TLV_ETVOC, "eTVOC", None, SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS, SensorStateClass.MEASUREMENT, device_info))
-        sensors.append(QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_NOISE, "Noise", DB, SensorDeviceClass.SOUND_PRESSURE, SensorStateClass.MEASUREMENT, device_info))
-    
-    # Add signal strength for TLV devices
-    if model in TLV_MODELS:
-        signal_sensor = QingpingDeviceSensor(coordinator, config_entry, mac, name, SENSOR_SIGNAL_STRENGTH, "Signal Strength", "dBm", SensorDeviceClass.SIGNAL_STRENGTH, SensorStateClass.MEASUREMENT, device_info)
+        signal_sensor = QingpingDeviceSensor(
+            coordinator, config_entry, mac, name,
+            SENSOR_SIGNAL_STRENGTH, "Signal Strength", "dBm",
+            SensorDeviceClass.SIGNAL_STRENGTH, SensorStateClass.MEASUREMENT, device_info
+        )
         signal_sensor._attr_entity_category = EntityCategory.DIAGNOSTIC
-        sensors.append(signal_sensor)
+
+        sensors = [
+            status_sensor,
+            mac_sensor,
+            battery_sensor,
+            temp_sensor,
+            humidity_sensor,
+            signal_sensor,
+        ]
+
+    else:
+        battery_state = QingpingDeviceBatteryStateSensor(coordinator, config_entry, mac, name, device_info)
+
+        # Only create type_sensor for JSON devices (not TLV)
+        if model in JSON_MODELS:
+            type_sensor = QingpingDeviceTypeSensor(coordinator, config_entry, mac, name, device_info)
+            sensors = [
+                status_sensor,
+                firmware_sensor,
+                type_sensor,
+                mac_sensor,
+            ]
+        else:
+            sensors = [
+                status_sensor,
+                firmware_sensor,
+                mac_sensor,
+            ]
+
+        if model in ["CGS1", "CGS2", "CGDN1", "CGP22C", "CGP22W", "CGP23W"]:
+            sensors.append(battery_state)
+            battery_sensor = QingpingDeviceSensor(
+                coordinator, config_entry, mac, name,
+                SENSOR_BATTERY, "Battery", PERCENTAGE,
+                SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT, device_info
+            )
+            battery_sensor._attr_entity_category = EntityCategory.DIAGNOSTIC
+            sensors.append(battery_sensor)
+
+        temp_sensor = QingpingDeviceSensor(
+            coordinator, config_entry, mac, name,
+            SENSOR_TEMPERATURE, "Temperature", native_temp_unit,
+            SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, device_info
+        )
+        humidity_sensor = QingpingDeviceSensor(
+            coordinator, config_entry, mac, name,
+            SENSOR_HUMIDITY, "Humidity", PERCENTAGE,
+            SensorDeviceClass.HUMIDITY, SensorStateClass.MEASUREMENT, device_info
+        )
+        sensors.append(temp_sensor)
+        sensors.append(humidity_sensor)
+
+        if model in ["CGS1", "CGS2", "CGDN1", "CGP22C", "CGR1W", "CGR1PW"]:
+            sensors.append(QingpingDeviceSensor(
+                coordinator, config_entry, mac, name,
+                SENSOR_CO2, "CO2", PPM,
+                SensorDeviceClass.CO2, SensorStateClass.MEASUREMENT, device_info
+            ))
+
+        if model in ["CGS1", "CGS2", "CGDN1", "CGR1W", "CGR1PW"]:
+            sensors.append(QingpingDeviceSensor(
+                coordinator, config_entry, mac, name,
+                SENSOR_PM10, "PM10", CONCENTRATION,
+                SensorDeviceClass.PM10, SensorStateClass.MEASUREMENT, device_info
+            ))
+            sensors.append(QingpingDeviceSensor(
+                coordinator, config_entry, mac, name,
+                SENSOR_PM25, "PM25", CONCENTRATION,
+                SensorDeviceClass.PM25, SensorStateClass.MEASUREMENT, device_info
+            ))
+
+        if model == "CGS1":
+            sensors.append(QingpingDeviceSensor(
+                coordinator, config_entry, mac, name,
+                SENSOR_TVOC, "TVOC", PPB,
+                SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS, SensorStateClass.MEASUREMENT, device_info
+            ))
+        elif model == "CGS2":
+            sensors.append(QingpingDeviceSensor(
+                coordinator, config_entry, mac, name,
+                SENSOR_ETVOC, "eTVOC", None,
+                SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS, SensorStateClass.MEASUREMENT, device_info
+            ))
+            sensors.append(QingpingDeviceSensor(
+                coordinator, config_entry, mac, name,
+                SENSOR_NOISE, "Noise", DB,
+                SensorDeviceClass.SOUND_PRESSURE, SensorStateClass.MEASUREMENT, device_info
+            ))
+        elif model == "CGP23W":
+            sensors.append(QingpingDeviceSensor(
+                coordinator, config_entry, mac, name,
+                SENSOR_PRESSURE, "Pressure", "kPa",
+                SensorDeviceClass.PRESSURE, SensorStateClass.MEASUREMENT, device_info
+            ))
+        elif model in ["CGR1W", "CGR1PW"]:
+            sensors.append(QingpingDeviceSensor(
+                coordinator, config_entry, mac, name,
+                SENSOR_LIGHT, "Light", "lx",
+                SensorDeviceClass.ILLUMINANCE, SensorStateClass.MEASUREMENT, device_info
+            ))
+            sensors.append(QingpingDeviceSensor(
+                coordinator, config_entry, mac, name,
+                SENSOR_TLV_ETVOC, "eTVOC", None,
+                SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS, SensorStateClass.MEASUREMENT, device_info
+            ))
+            sensors.append(QingpingDeviceSensor(
+                coordinator, config_entry, mac, name,
+                SENSOR_NOISE, "Noise", DB,
+                SensorDeviceClass.SOUND_PRESSURE, SensorStateClass.MEASUREMENT, device_info
+            ))
+
+        if model in TLV_MODELS:
+            signal_sensor = QingpingDeviceSensor(
+                coordinator, config_entry, mac, name,
+                SENSOR_SIGNAL_STRENGTH, "Signal Strength", "dBm",
+                SensorDeviceClass.SIGNAL_STRENGTH, SensorStateClass.MEASUREMENT, device_info
+            )
+            signal_sensor._attr_entity_category = EntityCategory.DIAGNOSTIC
+            sensors.append(signal_sensor)
 
     async_add_entities(sensors)
 
-    # Store sensors in hass.data
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN].setdefault(config_entry.entry_id, {})
     hass.data[DOMAIN][config_entry.entry_id]["sensors"] = sensors
-    
-    # Send initial configuration for new TLV devices
+
     if model in TLV_MODELS:
         await _send_initial_tlv_config(hass, config_entry, mac, model)
 
@@ -379,6 +474,58 @@ async def async_setup_entry(
             
             if not isinstance(payload, dict):
                 _LOGGER.error("Payload is not a dictionary")
+                return
+            
+            message_type = str(payload.get("type", ""))
+            received_mac = payload.get("mac", "").replace(":", "").upper()
+            expected_mac = mac.replace(":", "").upper()
+
+            # NEW: gateway-relayed BLE packet
+            if model in ADV_MODELS:
+                if message_type != "9":
+                    return
+
+                if not received_mac or received_mac != expected_mac:
+                    return
+
+                adv_data = payload.get("adv_data")
+                if not adv_data:
+                    return
+
+                decoded = decode_qingping_adv_data(adv_data)
+                if not decoded.get("ok"):
+                    return
+
+                payload_mac = (decoded.get("payload_mac") or "").upper()
+                if payload_mac and payload_mac != expected_mac:
+                    return
+
+                current_timestamp = int(time.time())
+                if status_sensor.hass:
+                    status_sensor.update_timestamp(current_timestamp)
+
+                if mac_sensor.hass:
+                    mac_sensor.update_mac(expected_mac)
+
+                rssi = payload.get("rssi")
+                if rssi is not None:
+                    try:
+                        rssi = int(rssi)
+                    except (TypeError, ValueError):
+                        rssi = None
+
+                if temp_sensor and temp_sensor.hass and decoded.get("temperature") is not None:
+                    temp_sensor.update_from_latest_data(decoded["temperature"])
+
+                if humidity_sensor and humidity_sensor.hass and decoded.get("humidity") is not None:
+                    humidity_sensor.update_from_latest_data(decoded["humidity"])
+
+                if battery_sensor and battery_sensor.hass and decoded.get("battery") is not None:
+                    battery_sensor.update_from_latest_data(decoded["battery"])
+
+                if signal_sensor and signal_sensor.hass and rssi is not None:
+                    signal_sensor.update_from_latest_data(rssi)
+
                 return
 
             # Check message type first - type 28 (settings) messages don't include MAC
@@ -408,9 +555,8 @@ async def async_setup_entry(
                     firmware_sensor.update_version(firmware_version)
 
             device_type = payload.get("type")
-            if device_type is not None:
-                if type_sensor.hass:
-                    type_sensor.update_type(device_type)
+            if device_type is not None and type_sensor and type_sensor.hass:
+                type_sensor.update_type(device_type)
 
             mac_address = payload.get("mac")
             if mac_address is not None:
@@ -451,6 +597,8 @@ async def async_setup_entry(
                     
                     for sensor in sensors[5:]:  # Skip status, firmware, mac, type, and battery_state sensors
                         if not sensor.hass:
+                            continue
+                        if not hasattr(sensor, "_sensor_type"):
                             continue
                         if sensor._sensor_type in data:
                             sensor_data = data[sensor._sensor_type]
@@ -601,35 +749,36 @@ async def async_setup_entry(
         except Exception as e:
             _LOGGER.error("Error processing TLV message: %s", str(e))
 
+    topic = f"{MQTT_TOPIC_PREFIX}/#" if model == "CGDK2" else f"{MQTT_TOPIC_PREFIX}/{mac}/up"
+
     await mqtt.async_subscribe(
-        hass, f"{MQTT_TOPIC_PREFIX}/{mac}/up", message_received, 1, encoding=None
+        hass, topic, message_received, 1, encoding=None
     )
-    _LOGGER.info("Subscribed to MQTT topic: %s/%s/up", MQTT_TOPIC_PREFIX, mac)
+    _LOGGER.info("Subscribed to MQTT topic: %s", topic)
 
-    # Set up timer for periodic publishing
-    async def publish_config_wrapper(*args):
-        if await ensure_mqtt_connected(hass):
-            # Find first sensor with publish_config method
-            for sensor in sensors:
-                if isinstance(sensor, QingpingDeviceSensor) and hasattr(sensor, 'publish_config'):
-                    await sensor.publish_config()
-                    break
-        else:
-            _LOGGER.error("Failed to connect to MQTT for periodic config publish")
+    if model not in ADV_MODELS:
+        # Set up timer for periodic publishing
+        async def publish_config_wrapper(*args):
+            if await ensure_mqtt_connected(hass):
+                for sensor in sensors:
+                    if isinstance(sensor, QingpingDeviceSensor) and hasattr(sensor, "publish_config"):
+                        await sensor.publish_config()
+                        break
+            else:
+                _LOGGER.error("Failed to connect to MQTT for periodic config publish")
 
-    hass.data[DOMAIN][config_entry.entry_id]["remove_timer"] = async_track_time_interval(
-        hass, publish_config_wrapper, timedelta(seconds=int(DEFAULT_DURATION))
-    )
+        hass.data[DOMAIN][config_entry.entry_id]["remove_timer"] = async_track_time_interval(
+            hass, publish_config_wrapper, timedelta(seconds=int(DEFAULT_DURATION))
+        )
 
-    # Publish config immediately upon setup with a delay to ensure entities are ready
-    async def delayed_publish():
-        await asyncio.sleep(2)  # Wait 2 seconds for entities to be fully added
-        if await ensure_mqtt_connected(hass):
-            await publish_config_wrapper()
-        else:
-            _LOGGER.error("Failed to connect to MQTT for initial config publish")
-    
-    asyncio.create_task(delayed_publish())
+        async def delayed_publish():
+            await asyncio.sleep(2)
+            if await ensure_mqtt_connected(hass):
+                await publish_config_wrapper()
+            else:
+                _LOGGER.error("Failed to connect to MQTT for initial config publish")
+
+        asyncio.create_task(delayed_publish())
 
 class QingpingDeviceStatusSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Qingping Device status sensor."""
@@ -639,7 +788,8 @@ class QingpingDeviceStatusSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._config_entry = config_entry
         self._mac = mac
-        self._attr_name = f"{name} Status"
+        self._attr_has_entity_name = True
+        self._attr_name = "Status"
         self._attr_unique_id = f"{mac}_status"
         self._attr_device_info = device_info
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -706,6 +856,9 @@ class QingpingDeviceStatusSensor(CoordinatorEntity, SensorEntity):
         """Publish config when status changes from offline to online."""
         if not self.hass:
             return
+        model = self._config_entry.data.get(CONF_MODEL, "CGS1")
+        if model in ADV_MODELS:
+            return
         # Add a small delay to let the device fully come online
         await asyncio.sleep(2)
         sensors = self.hass.data[DOMAIN][self._config_entry.entry_id].get("sensors", [])
@@ -736,7 +889,8 @@ class QingpingDeviceFirmwareSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._config_entry = config_entry
         self._mac = mac
-        self._attr_name = f"{name} Firmware"
+        self._attr_has_entity_name = True
+        self._attr_name = "Firmware"
         self._attr_unique_id = f"{mac}_firmware"
         self._attr_device_info = device_info
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -756,7 +910,8 @@ class QingpingDeviceMACSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._config_entry = config_entry
         self._mac = mac
-        self._attr_name = f"{name} MAC Address"
+        self._attr_has_entity_name = True
+        self._attr_name = "MAC Address"
         self._attr_unique_id = f"{mac}_mac"
         self._attr_device_info = device_info
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -776,7 +931,8 @@ class QingpingDeviceBatteryStateSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._config_entry = config_entry
         self._mac = mac
-        self._attr_name = f"{name} Battery State"
+        self._attr_has_entity_name = True
+        self._attr_name = "Battery State"
         self._attr_unique_id = f"{mac}_battery_state"
         self._attr_device_info = device_info
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -805,7 +961,8 @@ class QingpingDeviceTypeSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._config_entry = config_entry
         self._mac = mac
-        self._attr_name = f"{name} Report Type"
+        self._attr_has_entity_name = True
+        self._attr_name = "Report Type"
         self._attr_unique_id = f"{mac}_report_type"
         self._attr_device_info = device_info
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -841,7 +998,8 @@ class QingpingDeviceSensor(CoordinatorEntity, SensorEntity):
         self._config_entry = config_entry
         self._mac = mac
         self._sensor_type = sensor_type
-        self._attr_name = f"{name} {cln_name}"
+        self._attr_has_entity_name = True
+        self._attr_name = cln_name
         self._attr_unique_id = f"{mac}_{sensor_type}"
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
@@ -980,6 +1138,10 @@ class QingpingDeviceSensor(CoordinatorEntity, SensorEntity):
         # Check if entity has been added to hass yet
         if not self.hass:
             _LOGGER.debug(f"[{self._mac}] Sensor not yet added to hass, skipping config publish")
+            return
+        
+        model = self._config_entry.data.get(CONF_MODEL, "CGS1")
+        if model in ADV_MODELS:
             return
             
         update_interval = self.coordinator.data.get(CONF_UPDATE_INTERVAL, 15)

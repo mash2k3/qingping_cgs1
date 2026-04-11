@@ -10,7 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import EntityCategory
 
-from .const import DOMAIN, CONF_CO2_ASC, TLV_MODELS, CONF_LED_INDICATOR
+from .const import DOMAIN, CONF_CO2_ASC, TLV_MODELS, CONF_LED_INDICATOR, ADV_MODELS
 from .tlv_encoder import tlv_encode
 
 async def async_setup_entry(
@@ -22,6 +22,8 @@ async def async_setup_entry(
     mac = config_entry.data[CONF_MAC]
     name = config_entry.data[CONF_NAME]
     model = config_entry.data[CONF_MODEL]
+    if model in ADV_MODELS:
+        return
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
     device_info = {

@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import EntityCategory
 
-from .const import DOMAIN, CONF_NIGHT_MODE_START_TIME, CONF_NIGHT_MODE_END_TIME
+from .const import DOMAIN, CONF_NIGHT_MODE_START_TIME, CONF_NIGHT_MODE_END_TIME, ADV_MODELS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,6 +25,8 @@ async def async_setup_entry(
     mac = config_entry.data[CONF_MAC]
     name = config_entry.data[CONF_NAME]
     model = config_entry.data[CONF_MODEL]
+    if model in ADV_MODELS:
+        return
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
     device_info = {

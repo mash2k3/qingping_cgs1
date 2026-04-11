@@ -18,7 +18,7 @@ from .const import DOMAIN, MQTT_TOPIC_PREFIX
 
 _LOGGER = logging.getLogger(__name__)
 
-from .const import DOMAIN, TLV_MODELS
+from .const import DOMAIN, TLV_MODELS, ADV_MODELS
 from .tlv_encoder import tlv_encode
 
 async def async_setup_entry(
@@ -30,6 +30,8 @@ async def async_setup_entry(
     mac = config_entry.data[CONF_MAC]
     name = config_entry.data[CONF_NAME]
     model = config_entry.data[CONF_MODEL]
+    if model in ADV_MODELS:
+        return
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
     device_info = {
