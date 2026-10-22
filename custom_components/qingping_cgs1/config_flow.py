@@ -13,7 +13,11 @@ from homeassistant.components import mqtt
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import DOMAIN, MQTT_TOPIC_PREFIX, QP_MODELS, DEFAULT_MODEL
+from .const import (
+    DOMAIN, MQTT_TOPIC_PREFIX, QP_MODELS, DEFAULT_MODEL,
+    CONF_AUTO_SWITCH_REPORT_MODE, DEFAULT_AUTO_SWITCH_REPORT_MODE,
+    CONF_OFFLINE_TIMEOUT_MINUTES, DEFAULT_OFFLINE_TIMEOUT_MINUTES,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -202,29 +206,52 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Manage the options."""
         if user_input is not None:
-            # Update the config entry
+            # Update model in entry data
             new_data = {
                 **self.config_entry.data,
-                CONF_MODEL: user_input[CONF_MODEL]
+                CONF_MODEL: user_input[CONF_MODEL],
             }
-            
             self.hass.config_entries.async_update_entry(
-                self.config_entry,
-                data=new_data,
+                self.config_entry, data=new_data,
             )
-            
+
             # Reload the integration to apply changes
-            await self.hass.config_entries.async_reload(self._config_entry_id)
-            
-            return self.async_create_entry(title="", data=user_input)
+            await self.hass.config_entries.async_reload(
+                self.config_entry.entry_id
+            )
+
+            # Return options via async_create_entry (this sets config_entry.options)
+            return self.async_create_entry(title="", data={
+                CONF_AUTO_SWITCH_REPORT_MODE: user_input.get(
+                    CONF_AUTO_SWITCH_REPORT_MODE,
+                    DEFAULT_AUTO_SWITCH_REPORT_MODE,
+                ),
+                CONF_OFFLINE_TIMEOUT_MINUTES: user_input.get(
+                    CONF_OFFLINE_TIMEOUT_MINUTES,
+                    DEFAULT_OFFLINE_TIMEOUT_MINUTES,
+                ),
+            })
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
                 vol.Required(
                     CONF_MODEL,
-                    default=self.config_entry.data.get(CONF_MODEL, DEFAULT_MODEL)
+                    default=self.config_entry.data.get(CONF_MODEL, DEFAULT_MODEL),
                 ): vol.In(QP_MODELS),
+                vol.Required(
+                    CONF_AUTO_SWITCH_REPORT_MODE,
+                    default=self.config_entry.options.get(
+                        CONF_AUTO_SWITCH_REPORT_MODE,
+                        DEFAULT_AUTO_SWITCH_REPORT_MODE,
+                    ),
+                ): bool,
+                vol.Required(
+                    CONF_OFFLINE_TIMEOUT_MINUTES,
+                    default=self.config_entry.options.get(
+                        CONF_OFFLINE_TIMEOUT_MINUTES,
+                        DEFAULT_OFFLINE_TIMEOUT_MINUTES,
+                    ),
+                ): vol.All(vol.Coerce(int), vol.Range(min=5, max=1440)),
             }),
         )
-		

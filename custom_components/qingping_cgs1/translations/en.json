@@ -28,9 +28,11 @@
     "options": {
         "step": {
             "init": {
-                "description": "Select Qingping Model",
+                "description": "Configure device options",
                 "data": {
-                    "model": "Select your device"
+                    "model": "Device Model",
+                    "auto_switch_report_mode": "Auto-switch report mode on charge state change",
+                    "offline_timeout_minutes": "Offline timeout for Historic mode (minutes)"
                 }
             }
         }

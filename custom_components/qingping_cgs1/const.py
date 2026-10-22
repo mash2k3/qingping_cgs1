@@ -43,7 +43,7 @@ REPORT_MODE_REALTIME = "realtime"
 
 # Default values for offsets and update interval
 DEFAULT_OFFSET = 0
-DEFAULT_UPDATE_INTERVAL = 15
+DEFAULT_UPDATE_INTERVAL = 300  # 5 minutes (was 15 seconds)
 
 # MQTT topics
 MQTT_TOPIC_PREFIX = "qingping"
@@ -98,3 +98,9 @@ CONF_NIGHT_MODE_END_TIME = "night_mode_end_time"
 CONF_AUTO_SLIDING_TIME = "auto_slideing_time"
 CONF_SCREENSAVER_TYPE = "screensaver_type"
 CONF_TIMEZONE = "timezone"
+
+# Fork: Per-device configurable options
+CONF_AUTO_SWITCH_REPORT_MODE = "auto_switch_report_mode"
+CONF_OFFLINE_TIMEOUT_MINUTES = "offline_timeout_minutes"
+DEFAULT_OFFLINE_TIMEOUT_MINUTES = 65
+DEFAULT_AUTO_SWITCH_REPORT_MODE = False

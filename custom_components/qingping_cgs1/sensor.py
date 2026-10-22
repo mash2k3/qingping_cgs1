@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import time, math
 import asyncio
 
@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpda
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.components.recorder.statistics import async_add_external_statistics
 
 from .const import (
     DOMAIN, MQTT_TOPIC_PREFIX,
@@ -27,12 +28,24 @@ from .const import (
     CONF_REPORT_INTERVAL, CONF_SAMPLE_INTERVAL,
     ATTR_TYPE, ATTR_UP_ITVL, ATTR_DURATION,
     DEFAULT_TYPE, DEFAULT_DURATION, TLV_MODELS, JSON_MODELS,
-    CONF_REPORT_MODE, REPORT_MODE_HISTORIC, REPORT_MODE_REALTIME
+    CONF_REPORT_MODE, REPORT_MODE_HISTORIC, REPORT_MODE_REALTIME,
+    CONF_AUTO_SWITCH_REPORT_MODE, DEFAULT_AUTO_SWITCH_REPORT_MODE,
+    CONF_OFFLINE_TIMEOUT_MINUTES, DEFAULT_OFFLINE_TIMEOUT_MINUTES,
 )
 from .tlv_decoder import tlv_decode, is_tlv_format
 from .tlv_encoder import tlv_encode, int_to_bytes_little_endian
 
 _LOGGER = logging.getLogger(__name__)
+
+class StatisticData(dict):
+    """Dict subclass with attribute access for HA statistics compatibility."""
+    __getattr__ = dict.__getitem__
+    __setattr__ = dict.__setitem__
+
+class StatisticMetaData(dict):
+    """Dict subclass with attribute access for HA statistics compatibility."""
+    __getattr__ = dict.__getitem__
+    __setattr__ = dict.__setitem__
 
 OFFLINE_TIMEOUT_REALTIME = 300  # 5 minutes for real-time mode
 OFFLINE_TIMEOUT_HISTORIC = 900  # 15 minutes for historic mode
@@ -55,13 +68,20 @@ async def _auto_switch_report_mode_on_battery_state(hass, config_entry, mac, is_
     """Automatically switch report mode based on battery charging state."""
     if model not in ["CGP22C", "CGP23W", "CGP22W"]:
         return
-    
+
+    # Check if auto-switch is enabled in options
+    auto_switch = config_entry.options.get(
+        CONF_AUTO_SWITCH_REPORT_MODE, DEFAULT_AUTO_SWITCH_REPORT_MODE
+    )
+    if not auto_switch:
+        _LOGGER.debug(f"[{mac}] Auto-switch report mode disabled, skipping")
+        return
+
     from .tlv_encoder import tlv_encode, int_to_bytes_little_endian
-    from .const import CONF_REPORT_MODE, REPORT_MODE_HISTORIC, REPORT_MODE_REALTIME
-    
+
     # Get coordinator
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
-    
+
     # Determine mode based on charging state
     if is_charging:
         # Real-time mode when charging
@@ -77,23 +97,15 @@ async def _auto_switch_report_mode_on_battery_state(hass, config_entry, mac, is_
         }
         mode_name = "HISTORIC (on battery)"
         new_mode = REPORT_MODE_HISTORIC
-    
+
     payload = tlv_encode(0x32, packets)
     topic = f"qingping/{mac}/down"
-    
+
     await mqtt.async_publish(hass, topic, payload)
-    
+
     # Update coordinator data
     coordinator.data[CONF_REPORT_MODE] = new_mode
-    
-    # Update config entry data
-    new_data = dict(config_entry.data)
-    new_data[CONF_REPORT_MODE] = new_mode
-    hass.config_entries.async_update_entry(config_entry, data=new_data)
-    
-    # Refresh coordinator to update all entities
-    await coordinator.async_request_refresh()
-    
+
     _LOGGER.info(f"[{mac}] Auto-switched to {mode_name} based on battery state (timeout: {'5min' if is_charging else '15min'})")
     
 async def publish_setting_change(hass: HomeAssistant, mac: str, setting_key: str, value: any) -> None:
@@ -233,7 +245,7 @@ async def _send_initial_tlv_config(hass, config_entry, mac, model):
     
     # Set default values in config entry
     new_data = dict(config_entry.data)
-    new_data[CONF_REPORT_MODE] = REPORT_MODE_REALTIME  # Real-time by default
+    new_data[CONF_REPORT_MODE] = REPORT_MODE_HISTORIC  # Historic by default (fork change)
     new_data[CONF_REPORT_INTERVAL] = 10  # 10 minutes (minimum)
     new_data[CONF_SAMPLE_INTERVAL] = 60  # 60 seconds
     new_data[CONF_TEMPERATURE_UNIT] = temp_unit
@@ -246,7 +258,7 @@ async def _send_initial_tlv_config(hass, config_entry, mac, model):
     
     # Send default configuration commands
     packets = {
-        0x42: int_to_bytes_little_endian(21600, 2),  # Real-time for 6 hours
+        0x42: int_to_bytes_little_endian(0, 2),  # Historic mode (fork change)
         0x19: bytes([1 if temp_unit == "fahrenheit" else 0])  # Temperature unit
     }
     
@@ -258,7 +270,67 @@ async def _send_initial_tlv_config(hass, config_entry, mac, model):
     topic = f"qingping/{mac}/down"
     
     await mqtt.async_publish(hass, topic, payload)
-    _LOGGER.info(f"[{mac}] Initial config sent: Real-time mode, temp unit: {temp_unit}")
+    _LOGGER.info(f"[{mac}] Initial config sent: Historic mode, temp unit: {temp_unit}")
+
+
+async def _import_batch_statistics(
+    hass: HomeAssistant,
+    mac: str,
+    device_name: str,
+    batch_data: list[dict],
+    sensor_mappings: dict[str, tuple[str, str]],
+) -> None:
+    """Import batch sensor data into HA long-term statistics.
+
+    HA requires timestamps aligned to the top of the hour.
+    Multiple data points within the same hour are averaged.
+    """
+    for sensor_key, (display_name, unit) in sensor_mappings.items():
+        # Group values by hour
+        hourly_buckets: dict[int, list[float]] = {}
+        for point in batch_data:
+            if sensor_key not in point:
+                continue
+            ts = point.get("timestamp", 0)
+            if ts == 0:
+                continue
+            value = float(point[sensor_key])
+            hour_ts = ts - (ts % 3600)  # Floor to hour boundary
+            hourly_buckets.setdefault(hour_ts, []).append(value)
+
+        if not hourly_buckets:
+            continue
+
+        # Build one StatisticData per hour with averaged values
+        statistics = []
+        for hour_ts in sorted(hourly_buckets):
+            values = hourly_buckets[hour_ts]
+            mean_val = sum(values) / len(values)
+            statistics.append(StatisticData(
+                start=datetime.fromtimestamp(hour_ts, tz=timezone.utc),
+                mean=mean_val,
+                state=mean_val,
+            ))
+
+        metadata = StatisticMetaData(
+            has_mean=True,
+            has_sum=False,
+            name=f"{device_name} {display_name}",
+            source="qingping_cgs1",
+            statistic_id=f"qingping_cgs1:{mac.lower()}_{sensor_key}",
+            unit_of_measurement=unit,
+        )
+        try:
+            async_add_external_statistics(hass, metadata, statistics)
+            _LOGGER.info(
+                "[%s] Imported %d statistics points for %s",
+                mac, len(statistics), sensor_key,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "[%s] Failed to import statistics for %s: %s",
+                mac, sensor_key, err,
+            )
 
 
 async def async_setup_entry(
@@ -432,48 +504,130 @@ async def async_setup_entry(
                 _LOGGER.debug("No valid sensorData in payload, possibly a config response or device just powered on")
                 # Device is online, just waiting for sensor data
                 return
-            #if len(sensor_data) == 1:
-            if message_type not in [17, 13, "17", "13"]:
-                #ignore type 17 sensor data                
-                for data in sensor_data:
-                    battery_charging = None
-                    battery_status = None
-                    if SENSOR_BATTERY in data:
-                        battery_data = data[SENSOR_BATTERY]
-                        if isinstance(battery_data, dict):
-                            battery_status = battery_data.get("status")
-                            if battery_status is not None:
-                                battery_charging = (battery_status == 1)  # Explicitly True or False
-                    
-                    # Update battery state sensor first if we have status
-                    if battery_status is not None and battery_state.hass:
-                        battery_state.update_battery_state(battery_status)
-                    
-                    for sensor in sensors[5:]:  # Skip status, firmware, mac, type, and battery_state sensors
-                        if not sensor.hass:
-                            continue
-                        if sensor._sensor_type in data:
-                            sensor_data = data[sensor._sensor_type]
-                            if isinstance(sensor_data, dict):
-                                value = sensor_data.get("value")
-                                status = sensor_data.get("status")
-                                # Check if PM sensor is disabled (value=99999)
-                                if sensor._sensor_type in [SENSOR_PM10, SENSOR_PM25] and value == 99999:
-                                    sensor.set_unavailable()
-                                elif value is not None:
-                                    sensor.update_from_latest_data(value)
-                                    if sensor._sensor_type == SENSOR_BATTERY and battery_charging is not None:
-                                        sensor.update_battery_charging(battery_charging)
-                            else:
-                                # Handle non-dict values (backward compatibility)
-                                value = sensor_data
-                                if value is not None:
-                                    sensor.update_from_latest_data(value)
-                                    if sensor._sensor_type == SENSOR_BATTERY and battery_charging is not None:
-                                        sensor.update_battery_charging(battery_charging)
-            else:
-                _LOGGER.info("sensorData is type 17")
+            if message_type in [13, "13"]:
+                _LOGGER.debug("Type 13 message ignored for device %s", mac)
                 return
+
+            if message_type in [17, "17"]:
+                _LOGGER.info(
+                    "Type 17 batch data received for %s: %d points",
+                    mac, len(sensor_data),
+                )
+                latest = sensor_data[-1]
+                battery_charging = None
+                battery_status = None
+                if SENSOR_BATTERY in latest:
+                    battery_data = latest[SENSOR_BATTERY]
+                    if isinstance(battery_data, dict):
+                        battery_status = battery_data.get("status")
+                        if battery_status is not None:
+                            battery_charging = (battery_status == 1)
+
+                if battery_status is not None and battery_state.hass:
+                    battery_state.update_battery_state(battery_status)
+
+                for sensor in sensors[5:]:
+                    if not sensor.hass:
+                        continue
+                    if sensor._sensor_type in latest:
+                        s_data = latest[sensor._sensor_type]
+                        if isinstance(s_data, dict):
+                            value = s_data.get("value")
+                            if value is not None:
+                                sensor.update_from_latest_data(value)
+                                if sensor._sensor_type == SENSOR_BATTERY and battery_charging is not None:
+                                    sensor.update_battery_charging(battery_charging)
+                        elif s_data is not None:
+                            sensor.update_from_latest_data(s_data)
+
+                batch_points = []
+                for item in sensor_data:
+                    point = {}
+                    ts_data = item.get("timestamp", {})
+                    if isinstance(ts_data, dict):
+                        ts = ts_data.get("value", 0)
+                    else:
+                        ts = int(ts_data) if ts_data else 0
+                    if ts == 0:
+                        continue
+                    point["timestamp"] = ts
+                    for key in ["temperature", "humidity", "co2", "pm25", "pm10", "tvoc"]:
+                        if key in item:
+                            s_data = item[key]
+                            if isinstance(s_data, dict):
+                                val = s_data.get("value")
+                                if val is not None:
+                                    point[key] = float(val)
+                            elif s_data is not None:
+                                point[key] = float(s_data)
+                    batch_points.append(point)
+
+                if batch_points:
+                    sensor_map = {}
+                    sample = batch_points[0]
+                    if "temperature" in sample:
+                        sensor_map["temperature"] = ("Temperature", "°C")
+                    if "humidity" in sample:
+                        sensor_map["humidity"] = ("Humidity", "%")
+                    if "co2" in sample:
+                        sensor_map["co2"] = ("CO2", "ppm")
+                    if "pm25" in sample:
+                        sensor_map["pm25"] = ("PM2.5", "µg/m³")
+                    if "pm10" in sample:
+                        sensor_map["pm10"] = ("PM10", "µg/m³")
+                    if "tvoc" in sample:
+                        sensor_map["tvoc"] = ("TVOC", "ppb")
+                    if sensor_map:
+                        hass.async_create_task(
+                            _import_batch_statistics(
+                                hass, mac, name, batch_points, sensor_map,
+                            )
+                        )
+
+                if payload.get("need_ack") == 1:
+                    ack_payload = json.dumps({"type": "17", "ack": 1})
+                    ack_topic = f"{MQTT_TOPIC_PREFIX}/{mac}/down"
+                    hass.async_create_task(
+                        mqtt.async_publish(hass, ack_topic, ack_payload)
+                    )
+                    _LOGGER.info("Sent ACK for type 17 batch data to %s", mac)
+
+                return
+
+            # Type 12 and other standard sensor data
+            for data in sensor_data:
+                battery_charging = None
+                battery_status = None
+                if SENSOR_BATTERY in data:
+                    battery_data = data[SENSOR_BATTERY]
+                    if isinstance(battery_data, dict):
+                        battery_status = battery_data.get("status")
+                        if battery_status is not None:
+                            battery_charging = (battery_status == 1)
+
+                if battery_status is not None and battery_state.hass:
+                    battery_state.update_battery_state(battery_status)
+
+                for sensor in sensors[5:]:
+                    if not sensor.hass:
+                        continue
+                    if sensor._sensor_type in data:
+                        s_data = data[sensor._sensor_type]
+                        if isinstance(s_data, dict):
+                            value = s_data.get("value")
+                            status = s_data.get("status")
+                            if sensor._sensor_type in [SENSOR_PM10, SENSOR_PM25] and value == 99999:
+                                sensor.set_unavailable()
+                            elif value is not None:
+                                sensor.update_from_latest_data(value)
+                                if sensor._sensor_type == SENSOR_BATTERY and battery_charging is not None:
+                                    sensor.update_battery_charging(battery_charging)
+                        else:
+                            value = s_data
+                            if value is not None:
+                                sensor.update_from_latest_data(value)
+                                if sensor._sensor_type == SENSOR_BATTERY and battery_charging is not None:
+                                    sensor.update_battery_charging(battery_charging)
 
         except json.JSONDecodeError:
             _LOGGER.error("Invalid JSON in MQTT message: %s", message.payload)
@@ -486,7 +640,7 @@ async def async_setup_entry(
             cmd = message.payload[2] if len(message.payload) > 2 else 0
             # Map CMD codes to descriptions for logging
             cmd_names = {
-                0x31: "Unknown/Reserved",
+                0x31: "Historical Data (fw 2.x)",
                 0x32: "Configuration",
                 0x34: "Event Reporting",
                 0x35: "Button Press",
@@ -539,14 +693,32 @@ async def async_setup_entry(
             
             # IMPORTANT: Prioritize current data based on CMD type
             # CMD 0x41 = current reading (use first/only entry)
-            # CMD 0x42 = historical data (use LAST entry which is most recent)
+            # CMD 0x42 = historical data (fw <=1.x, use LAST entry which is most recent)
+            # CMD 0x31 = historical data (fw >=2.x, same format as 0x42)
             # CMD 0x43 = real-time data (use first/only entry)
-            if cmd == 0x42 and isinstance(sensor_data, list) and len(sensor_data) > 1:
-                # For historical data (CMD 0x42), use the LAST (most recent) reading
+            if cmd in (0x42, 0x31) and isinstance(sensor_data, list) and len(sensor_data) > 1:
                 data = sensor_data[-1]
-                _LOGGER.debug(f"[TLV] CMD 0x42: Using most recent historical data (entry {len(sensor_data)} of {len(sensor_data)})")
+                _LOGGER.info(
+                    f"[TLV] CMD 0x{cmd:02x}: {len(sensor_data)} history points, "
+                    f"importing to statistics, using latest for entity state"
+                )
+                sensor_map = {}
+                sample = sensor_data[0]
+                if "temperature" in sample:
+                    sensor_map["temperature"] = ("Temperature", "°C")
+                if "humidity" in sample:
+                    sensor_map["humidity"] = ("Humidity", "%")
+                if "co2" in sample:
+                    sensor_map["co2"] = ("CO2", "ppm")
+                if "pressure" in sample:
+                    sensor_map["pressure"] = ("Pressure", "kPa")
+                if sensor_map:
+                    hass.async_create_task(
+                        _import_batch_statistics(
+                            hass, mac, name, sensor_data, sensor_map
+                        )
+                    )
             else:
-                # For current/real-time data, use first entry
                 data = sensor_data[0] if isinstance(sensor_data, list) else sensor_data
             if model in ["CGR1W", "CGR1PW"]:
                 all_sensors = sensors[3:]
@@ -673,10 +845,17 @@ class QingpingDeviceStatusSensor(CoordinatorEntity, SensorEntity):
         # Determine timeout based on device type and mode
         if model in TLV_MODELS:
             report_mode = self.coordinator.data.get(CONF_REPORT_MODE, REPORT_MODE_HISTORIC)
-            timeout = OFFLINE_TIMEOUT_REALTIME if report_mode == REPORT_MODE_REALTIME else OFFLINE_TIMEOUT_HISTORIC
+            if report_mode == REPORT_MODE_REALTIME:
+                timeout = OFFLINE_TIMEOUT_REALTIME
+            else:
+                timeout = self._config_entry.options.get(
+                    CONF_OFFLINE_TIMEOUT_MINUTES, DEFAULT_OFFLINE_TIMEOUT_MINUTES
+                ) * 60
         else:
-            # JSON devices use standard timeout
-            timeout = OFFLINE_TIMEOUT_REALTIME
+            # JSON devices: use configurable timeout
+            timeout = self._config_entry.options.get(
+                CONF_OFFLINE_TIMEOUT_MINUTES, DEFAULT_OFFLINE_TIMEOUT_MINUTES
+            ) * 60
         
         current_time = int(time.time())
         time_since_last_msg = current_time - self._last_timestamp
@@ -685,21 +864,28 @@ class QingpingDeviceStatusSensor(CoordinatorEntity, SensorEntity):
         if self._attr_native_value != new_status:
             old_status = self._attr_native_value
             self._attr_native_value = new_status
-            self.async_write_ha_state()
-            _LOGGER.info("Device %s status changed from %s to %s (time since last message: %s seconds, timeout: %s)", 
-                        self._mac, old_status, new_status, time_since_last_msg, timeout)
-            
+            if self.entity_id:
+                self.async_write_ha_state()
+            _LOGGER.info(
+                "Device %s status: %s -> %s | time_since=%ds timeout=%ds | "
+                "model=%s report_mode=%s options=%s last_ts=%s",
+                self._mac, old_status, new_status, time_since_last_msg, timeout,
+                model, report_mode if model in TLV_MODELS else "N/A",
+                dict(self._config_entry.options), self._last_timestamp,
+            )
+
             # Update other sensors' availability
-            sensors = self.hass.data[DOMAIN][self._config_entry.entry_id].get("sensors", [])
-            for sensor in sensors:
-                if isinstance(sensor, QingpingDeviceSensor) and sensor.hass:
-                    sensor.async_write_ha_state()
-            
+            if DOMAIN in self.hass.data and self._config_entry.entry_id in self.hass.data[DOMAIN]:
+                sensors = self.hass.data[DOMAIN][self._config_entry.entry_id].get("sensors", [])
+                for sensor in sensors:
+                    if isinstance(sensor, QingpingDeviceSensor) and sensor.hass and sensor.entity_id:
+                        sensor.async_write_ha_state()
+
             # Call publish_config when status changes from offline to online
             if self._last_status == "offline" and new_status == "online":
                 _LOGGER.info("Device %s recovered from offline, publishing config", self._mac)
                 asyncio.create_task(self._publish_config_on_status_change())
-            
+
             self._last_status = new_status
 
     async def _publish_config_on_status_change(self):
@@ -717,11 +903,22 @@ class QingpingDeviceStatusSensor(CoordinatorEntity, SensorEntity):
     async def async_added_to_hass(self):
         """Set up a timer to regularly update the status."""
         await super().async_added_to_hass()
+        self._check_count = 0
 
         # Immediately check if we should be online based on recent activity
         self._update_status()
 
         async def update_status(*_):
+            self._check_count += 1
+            # Log every 5th check (every 5 minutes) for debugging
+            if self._check_count % 5 == 0:
+                model = self._config_entry.data.get(CONF_MODEL, "CGS1")
+                _LOGGER.info(
+                    "[periodic] %s: status=%s last_ts=%s age=%ds options=%s model=%s",
+                    self._mac, self._attr_native_value, self._last_timestamp,
+                    int(time.time()) - self._last_timestamp,
+                    dict(self._config_entry.options), model,
+                )
             self._update_status()
 
         self.async_on_remove(async_track_time_interval(
