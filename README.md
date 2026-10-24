@@ -34,6 +34,7 @@ This custom component integrates the Qingping devices with Home Assistant, allow
 - Automatic unit conversion for temperature
 - Device status monitoring
 - Battery level monitoring
+- Alarm clock management from a sidebar panel
 
 <div style="clear: both;"></div>
 
@@ -141,6 +142,22 @@ This custom component integrates the Qingping devices with Home Assistant, allow
     - Support for historical data buffering (CMD 0x42)
     - Always displays most recent sensor readings
     - Enhanced configuration options via TLV commands
+
+15. **Alarm Clocks**: `Only on JSON Devices`
+    - On startup the integration asks the device for its alarm list (MQTT `type 40`, `alarmQuery`). Devices that answer, or later report their alarms on their own, get alarm support automatically; devices without alarms are left alone.
+    - The **Qingping Alarms** page appears in the sidebar as soon as at least one device supports alarms. It lists the alarms of every such device and lets you add, edit and delete them: time, repeat days, ringtone and snooze.
+    - Changes made in the Qingping/Mi Home app or on the device show up on the page right away, and changes made in Home Assistant are synced back to the device.
+    - Services for automations: `qingping_cgs1.add_alarm`, `qingping_cgs1.update_alarm`, `qingping_cgs1.delete_alarm`. `update_alarm` and `delete_alarm` take the device and the alarm number on the device (`alarm_id`, alarms are numbered 1, 2, 3… in the order they were created); the number stays the same while the alarm exists.
+
+    ```yaml
+    action: qingping_cgs1.add_alarm
+    data:
+      device_id: 0123456789abcdef0123456789abcdef
+      time: "07:30:00"
+      days: [mon, tue, wed, thu, fri]
+      ringtone: Lively Piano
+      snooze: true
+    ```
 
 ## Troubleshooting
 
