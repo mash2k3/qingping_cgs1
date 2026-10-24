@@ -1,0 +1,108 @@
+add_alarm:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: qingping_cgs1
+    time:
+      required: true
+      selector:
+        time:
+    days:
+      selector:
+        select:
+          multiple: true
+          translation_key: weekday
+          options:
+            - mon
+            - tue
+            - wed
+            - thu
+            - fri
+            - sat
+            - sun
+    ringtone:
+      selector:
+        select:
+          options:
+            - Exotic Guitar
+            - Lively Piano
+            - Story Piano
+            - Beep
+            - Cuckoo
+            - Digital Ringtone
+            - Digital Ringtone 2
+            - Telephone Ringtone
+    snooze:
+      default: false
+      selector:
+        boolean:
+    enabled:
+      default: true
+      selector:
+        boolean:
+
+update_alarm:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: qingping_cgs1
+    alarm_id:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 999
+          mode: box
+    time:
+      selector:
+        time:
+    days:
+      selector:
+        select:
+          multiple: true
+          translation_key: weekday
+          options:
+            - mon
+            - tue
+            - wed
+            - thu
+            - fri
+            - sat
+            - sun
+    ringtone:
+      selector:
+        select:
+          options:
+            - Exotic Guitar
+            - Lively Piano
+            - Story Piano
+            - Beep
+            - Cuckoo
+            - Digital Ringtone
+            - Digital Ringtone 2
+            - Telephone Ringtone
+    snooze:
+      selector:
+        boolean:
+    enabled:
+      selector:
+        boolean:
+
+delete_alarm:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: qingping_cgs1
+    alarm_id:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 999
+          mode: box

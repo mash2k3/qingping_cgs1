@@ -571,6 +571,12 @@ async def async_setup_entry(
                     _LOGGER.warning("Type 28 message has no settings dict")
                 return  # Don't process as sensor data
 
+            if message_type == 40 or message_type == "40":
+                alarm_manager = hass.data[DOMAIN][config_entry.entry_id].get("alarm_manager")
+                if alarm_manager:
+                    alarm_manager.handle_message(payload)
+                return
+
             sensor_data = payload.get("sensorData")
             if not isinstance(sensor_data, list) or not sensor_data:
                 _LOGGER.debug("No valid sensorData in payload, possibly a config response or device just powered on")
@@ -872,6 +878,10 @@ async def async_setup_entry(
         hass, f"{MQTT_TOPIC_PREFIX}/{mac}/up", message_received, 1, encoding=None
     )
     _LOGGER.info("Subscribed to MQTT topic: %s/%s/up", MQTT_TOPIC_PREFIX, mac)
+
+    alarm_manager = hass.data[DOMAIN][config_entry.entry_id].get("alarm_manager")
+    if alarm_manager:
+        await alarm_manager.async_request()
 
     # Set up timer for periodic publishing
     async def publish_config_wrapper(*args):
