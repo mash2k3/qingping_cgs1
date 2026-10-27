@@ -25,6 +25,7 @@ from .const import (
     SENSOR_NOISE, SENSOR_PRESSURE, SENSOR_LIGHT, SENSOR_SIGNAL_STRENGTH, SENSOR_TLV_ETVOC,
     PERCENTAGE, PPM, PPB, CONCENTRATION, CONF_TVOC_UNIT, CONF_ETVOC_UNIT, DB,
     CONF_TEMPERATURE_OFFSET, CONF_HUMIDITY_OFFSET, CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL,
     CONF_REPORT_INTERVAL, CONF_SAMPLE_INTERVAL,
     ATTR_TYPE, ATTR_UP_ITVL, ATTR_DURATION,
     DEFAULT_TYPE, DEFAULT_DURATION, TLV_MODELS, JSON_MODELS,
@@ -345,6 +346,58 @@ async def _send_initial_tlv_config(hass, config_entry, mac, model):
     _LOGGER.info(f"[{mac}] Initial config sent: Historic mode, temp unit: {temp_unit}")
 
 
+# Minimum time after a real-time (type 12) message during which the device
+# counts as "live" (the 5-minute real-time offline window). The window is
+# widened to twice the update interval so the default 300 s interval is
+# covered. While live, type 17 batches only feed statistics.
+REALTIME_LIVE_WINDOW = OFFLINE_TIMEOUT_REALTIME
+# Ignore batch timestamps this far ahead of the HA clock (bad device clock).
+MAX_FUTURE_SKEW = 300
+
+
+def _json_point_timestamp(point: dict) -> int:
+    """Return the device timestamp of a JSON sensorData point, or 0 if absent."""
+    ts_data = point.get("timestamp")
+    if isinstance(ts_data, dict):
+        ts_data = ts_data.get("value")
+    try:
+        return int(ts_data) if ts_data else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _select_live_point_from_batch(
+    batch: list[dict],
+    now: float,
+    last_realtime_rx: float,
+    live_window: float = REALTIME_LIVE_WINDOW,
+) -> dict | None:
+    """Pick the point from a type 17 batch that may update entity state.
+
+    Returns None while the device is sending real-time (type 12) data:
+    those messages already carry the current reading, and a history batch
+    must not overwrite them with older values.
+
+    Otherwise returns the newest point by timestamp, because a batch is
+    not guaranteed to be ordered newest-last. Timestamps implausibly far
+    in the future are ignored. Falls back to the last item when no point
+    has a usable timestamp (the previous behaviour).
+    """
+    if last_realtime_rx and now - last_realtime_rx < live_window:
+        return None
+    points = [p for p in batch if isinstance(p, dict)]
+    if not points:
+        return None
+    timestamped = [
+        (ts, p)
+        for p in points
+        if 0 < (ts := _json_point_timestamp(p)) <= now + MAX_FUTURE_SKEW
+    ]
+    if not timestamped:
+        return points[-1]
+    return max(timestamped, key=lambda item: item[0])[1]
+
+
 async def _import_batch_statistics(
     hass: HomeAssistant,
     mac: str,
@@ -509,6 +562,9 @@ async def async_setup_entry(
     if model in TLV_MODELS:
         await _send_initial_tlv_config(hass, config_entry, mac, model)
 
+    # HA time of the last real-time (type 12) sensor message for this device.
+    live_state = {"last_realtime_rx": 0.0}
+
     @callback
     def message_received(message):
         """Handle new MQTT messages."""
@@ -591,7 +647,22 @@ async def async_setup_entry(
                     "Type 17 batch data received for %s: %d points",
                     mac, len(sensor_data),
                 )
-                latest = sensor_data[-1]
+                update_interval = coordinator.data.get(
+                    CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+                )
+                latest = _select_live_point_from_batch(
+                    sensor_data,
+                    current_timestamp,
+                    live_state["last_realtime_rx"],
+                    max(REALTIME_LIVE_WINDOW, 2 * int(update_interval or 0)),
+                )
+                if latest is None:
+                    _LOGGER.debug(
+                        "Type 17 batch for %s imported to statistics only; "
+                        "live values come from real-time data",
+                        mac,
+                    )
+                    latest = {}  # nothing below updates entity state
                 battery_charging = None
                 battery_status = None
                 if SENSOR_BATTERY in latest:
@@ -620,12 +691,10 @@ async def async_setup_entry(
 
                 batch_points = []
                 for item in sensor_data:
+                    if not isinstance(item, dict):
+                        continue
                     point = {}
-                    ts_data = item.get("timestamp", {})
-                    if isinstance(ts_data, dict):
-                        ts = ts_data.get("value", 0)
-                    else:
-                        ts = int(ts_data) if ts_data else 0
+                    ts = _json_point_timestamp(item)
                     if ts == 0:
                         continue
                     point["timestamp"] = ts
@@ -684,6 +753,7 @@ async def async_setup_entry(
                 return
 
             # Type 12 and other standard sensor data
+            live_state["last_realtime_rx"] = current_timestamp
             for data in sensor_data:
                 battery_charging = None
                 battery_status = None
