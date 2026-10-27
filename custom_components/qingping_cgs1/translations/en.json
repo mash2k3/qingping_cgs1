@@ -36,5 +36,120 @@
                 }
             }
         }
+    },
+    "selector": {
+        "weekday": {
+            "options": {
+                "mon": "Monday",
+                "tue": "Tuesday",
+                "wed": "Wednesday",
+                "thu": "Thursday",
+                "fri": "Friday",
+                "sat": "Saturday",
+                "sun": "Sunday"
+            }
+        },
+        "panel": {
+            "options": {
+                "title": "Qingping Alarms",
+                "add": "Add alarm",
+                "edit": "Edit alarm",
+                "empty": "No alarms yet",
+                "no_devices": "No Qingping devices with alarm support",
+                "device": "Device",
+                "time": "Time",
+                "repeat": "Repeat",
+                "ringtone": "Ringtone",
+                "snooze": "Allow snooze",
+                "once": "Once",
+                "weekdays": "Weekdays",
+                "weekends": "Weekends",
+                "every_day": "Every day",
+                "save": "Save",
+                "delete": "Delete",
+                "confirm_delete": "Tap again to delete",
+                "error": "Failed"
+            }
+        }
+    },
+    "services": {
+        "add_alarm": {
+            "name": "Add alarm",
+            "description": "Adds a new alarm to the device.",
+            "fields": {
+                "device_id": {
+                    "name": "Device",
+                    "description": "Qingping device to add the alarm to."
+                },
+                "time": {
+                    "name": "Time",
+                    "description": "Alarm time."
+                },
+                "days": {
+                    "name": "Days",
+                    "description": "Days to repeat on. Leave empty for a one-time alarm."
+                },
+                "ringtone": {
+                    "name": "Ringtone",
+                    "description": "Alarm ringtone."
+                },
+                "snooze": {
+                    "name": "Snooze",
+                    "description": "Allow snoozing the alarm."
+                },
+                "enabled": {
+                    "name": "Enabled",
+                    "description": "Whether the alarm is enabled."
+                }
+            }
+        },
+        "update_alarm": {
+            "name": "Update alarm",
+            "description": "Changes an existing alarm. Only the given fields are changed.",
+            "fields": {
+                "device_id": {
+                    "name": "Device",
+                    "description": "Qingping device the alarm belongs to."
+                },
+                "alarm_id": {
+                    "name": "Alarm ID",
+                    "description": "ID of the alarm on the device."
+                },
+                "time": {
+                    "name": "Time",
+                    "description": "Alarm time."
+                },
+                "days": {
+                    "name": "Days",
+                    "description": "Days to repeat on. Empty list makes it a one-time alarm."
+                },
+                "ringtone": {
+                    "name": "Ringtone",
+                    "description": "Alarm ringtone."
+                },
+                "snooze": {
+                    "name": "Snooze",
+                    "description": "Allow snoozing the alarm."
+                },
+                "enabled": {
+                    "name": "Enabled",
+                    "description": "Whether the alarm is enabled."
+                }
+            }
+        },
+        "delete_alarm": {
+            "name": "Delete alarm",
+            "description": "Deletes an alarm from the device.",
+            "fields": {
+                "device_id": {
+                    "name": "Device",
+                    "description": "Qingping device the alarm belongs to."
+                },
+                "alarm_id": {
+                    "name": "Alarm ID",
+                    "description": "ID of the alarm on the device."
+                }
+            }
+        }
     }
 }

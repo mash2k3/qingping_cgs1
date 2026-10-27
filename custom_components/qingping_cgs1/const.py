@@ -99,6 +99,8 @@ CONF_AUTO_SLIDING_TIME = "auto_slideing_time"
 CONF_SCREENSAVER_TYPE = "screensaver_type"
 CONF_TIMEZONE = "timezone"
 
+CONF_ALARMS = "alarms"
+
 # Fork: Per-device configurable options
 CONF_AUTO_SWITCH_REPORT_MODE = "auto_switch_report_mode"
 CONF_OFFLINE_TIMEOUT_MINUTES = "offline_timeout_minutes"
