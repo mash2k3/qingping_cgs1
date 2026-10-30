@@ -145,7 +145,7 @@ This custom component integrates the Qingping devices with Home Assistant, allow
 
 15. **Alarm Clocks**: `Only on JSON Devices`
     - On startup the integration asks the device for its alarm list (MQTT `type 40`, `alarmQuery`). Devices that answer, or later report their alarms on their own, get alarm support automatically; devices without alarms are left alone.
-    - The **Qingping Alarms** page appears in the sidebar as soon as at least one device supports alarms. It lists the alarms of every such device and lets you add, edit and delete them: time, repeat days, ringtone and snooze.
+    - The **Qingping Alarms** page appears in the sidebar as soon as at least one device supports alarms. It lists the alarms of every such device and lets you add, edit and delete them: time, repeat days, ringtone and snooze. To hide it, untick *Show the Qingping Alarms page in the sidebar* in the device's options (*Configure*); the alarm services keep working.
     - Changes made in the Qingping/Mi Home app or on the device show up on the page right away, and changes made in Home Assistant are synced back to the device.
     - Services for automations: `qingping_cgs1.add_alarm`, `qingping_cgs1.update_alarm`, `qingping_cgs1.delete_alarm`. `update_alarm` and `delete_alarm` take the device and the alarm number on the device (`alarm_id`, alarms are numbered 1, 2, 3… in the order they were created); the number stays the same while the alarm exists.
 

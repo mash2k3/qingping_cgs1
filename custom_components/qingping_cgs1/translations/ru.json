@@ -1,4 +1,17 @@
 {
+    "options": {
+        "step": {
+            "init": {
+                "description": "Настройки устройства",
+                "data": {
+                    "model": "Модель устройства",
+                    "auto_switch_report_mode": "Переключать режим отчётов при подключении и отключении зарядки",
+                    "offline_timeout_minutes": "Таймаут недоступности в режиме истории (минуты)",
+                    "show_alarms_panel": "Показывать страницу «Будильники Qingping» в боковом меню"
+                }
+            }
+        }
+    },
     "selector": {
         "weekday": {
             "options": {
