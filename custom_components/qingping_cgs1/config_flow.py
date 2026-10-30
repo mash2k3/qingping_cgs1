@@ -14,9 +14,10 @@ from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
-    DOMAIN, MQTT_TOPIC_PREFIX, QP_MODELS, DEFAULT_MODEL,
+    DOMAIN, MQTT_TOPIC_PREFIX, QP_MODELS, DEFAULT_MODEL, CONF_ALARMS,
     CONF_AUTO_SWITCH_REPORT_MODE, DEFAULT_AUTO_SWITCH_REPORT_MODE,
     CONF_OFFLINE_TIMEOUT_MINUTES, DEFAULT_OFFLINE_TIMEOUT_MINUTES,
+    CONF_SHOW_ALARMS_PANEL, DEFAULT_SHOW_ALARMS_PANEL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -230,7 +231,23 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     CONF_OFFLINE_TIMEOUT_MINUTES,
                     DEFAULT_OFFLINE_TIMEOUT_MINUTES,
                 ),
+                # only asked for devices with alarms; keep the stored value otherwise
+                CONF_SHOW_ALARMS_PANEL: user_input.get(
+                    CONF_SHOW_ALARMS_PANEL,
+                    self.config_entry.options.get(CONF_SHOW_ALARMS_PANEL, DEFAULT_SHOW_ALARMS_PANEL),
+                ),
             })
+
+        alarms_option = {}
+        # the alarm list is stored once the device reports it, so only devices with alarms have it
+        if CONF_ALARMS in self.config_entry.data:
+            alarms_option[vol.Required(
+                CONF_SHOW_ALARMS_PANEL,
+                default=self.config_entry.options.get(
+                    CONF_SHOW_ALARMS_PANEL,
+                    DEFAULT_SHOW_ALARMS_PANEL,
+                ),
+            )] = bool
 
         return self.async_show_form(
             step_id="init",
@@ -253,5 +270,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         DEFAULT_OFFLINE_TIMEOUT_MINUTES,
                     ),
                 ): vol.All(vol.Coerce(int), vol.Range(min=5, max=1440)),
+                **alarms_option,
             }),
         )

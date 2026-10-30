@@ -32,7 +32,8 @@
                 "data": {
                     "model": "Device Model",
                     "auto_switch_report_mode": "Auto-switch report mode on charge state change",
-                    "offline_timeout_minutes": "Offline timeout for Historic mode (minutes)"
+                    "offline_timeout_minutes": "Offline timeout for Historic mode (minutes)",
+                    "show_alarms_panel": "Show the Qingping Alarms page in the sidebar"
                 }
             }
         }

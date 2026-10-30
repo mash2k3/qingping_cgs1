@@ -16,7 +16,7 @@ import os
 import voluptuous as vol
 
 from .const import DOMAIN, CONF_TEMPERATURE_OFFSET, CONF_HUMIDITY_OFFSET, DEFAULT_OFFSET, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
-from .const import CONF_MAC, CONF_MODEL, JSON_MODELS
+from .const import CONF_MAC, CONF_MODEL, JSON_MODELS, CONF_SHOW_ALARMS_PANEL, DEFAULT_SHOW_ALARMS_PANEL
 from .alarms import (
     QingpingAlarmManager, RINGTONES, WEEKDAYS, SIGNAL_ALARMS_UPDATED,
     days_to_repeat, ringtone_id, time_to_hhmmss,
@@ -84,6 +84,16 @@ def _alarm_managers(hass: HomeAssistant) -> dict[str, QingpingAlarmManager]:
     }
 
 
+def _panel_managers(hass: HomeAssistant) -> dict[str, QingpingAlarmManager]:
+    """Alarm managers of the devices whose options keep them on the alarms page."""
+    managers = {}
+    for entry_id, manager in _alarm_managers(hass).items():
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry and entry.options.get(CONF_SHOW_ALARMS_PANEL, DEFAULT_SHOW_ALARMS_PANEL):
+            managers[entry_id] = manager
+    return managers
+
+
 def _get_alarm_manager(hass: HomeAssistant, device_id: str) -> QingpingAlarmManager:
     """Return the alarm manager of a device."""
     device = dr.async_get(hass).async_get(device_id)
@@ -110,7 +120,7 @@ def _alarms_snapshot(hass: HomeAssistant) -> list[dict]:
     """Return all devices with their alarms for the panel."""
     registry = dr.async_get(hass)
     devices = []
-    for entry_id, manager in _alarm_managers(hass).items():
+    for entry_id, manager in _panel_managers(hass).items():
         device = next(
             (d for d in dr.async_entries_for_config_entry(registry, entry_id) if (DOMAIN, manager.mac) in d.identifiers),
             None,
@@ -143,7 +153,7 @@ async def _async_setup_alarm_support(hass: HomeAssistant) -> None:
     """Prepare the alarms panel files, websocket API and update listener once."""
     if PANEL_DATA in hass.data:
         return
-    panel = hass.data[PANEL_DATA] = {"registered": False, "version": 0}
+    panel = hass.data[PANEL_DATA] = {"registered": False, "services": False, "version": 0}
     await hass.http.async_register_static_paths([
         StaticPathConfig(PANEL_STATIC_URL, os.path.dirname(PANEL_FILE), False)
     ])
@@ -169,20 +179,25 @@ async def _async_register_panel(hass: HomeAssistant, version: int) -> None:
 
 @callback
 def _async_update_alarm_features(hass: HomeAssistant) -> None:
-    """Show the panel and services only while a device with alarms is loaded."""
+    """Offer services while a device with alarms is loaded, the panel while one of them wants it."""
     panel = hass.data.get(PANEL_DATA)
     if panel is None:
         return
     supported = bool(_alarm_managers(hass))
-    if supported and not panel["registered"]:
-        panel["registered"] = True
+    if supported and not panel["services"]:
+        panel["services"] = True
         _async_register_services(hass)
-        hass.async_create_task(_async_register_panel(hass, panel["version"]))
-    elif not supported and panel["registered"]:
-        panel["registered"] = False
-        frontend.async_remove_panel(hass, PANEL_URL_PATH)
+    elif not supported and panel["services"]:
+        panel["services"] = False
         for service in (SERVICE_ADD_ALARM, SERVICE_UPDATE_ALARM, SERVICE_DELETE_ALARM):
             hass.services.async_remove(DOMAIN, service)
+    wanted = bool(_panel_managers(hass))
+    if wanted and not panel["registered"]:
+        panel["registered"] = True
+        hass.async_create_task(_async_register_panel(hass, panel["version"]))
+    elif not wanted and panel["registered"]:
+        panel["registered"] = False
+        frontend.async_remove_panel(hass, PANEL_URL_PATH)
 
 
 @callback
@@ -245,8 +260,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await _async_setup_alarm_support(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # the "show alarms page" option applies without a reload
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     async_dispatcher_send(hass, SIGNAL_ALARMS_UPDATED)
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    async_dispatcher_send(hass, SIGNAL_ALARMS_UPDATED)
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
