@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch, call
 
 import pytest
 
+from homeassistant.components.recorder.models import StatisticMeanType
+
 from custom_components.qingping_cgs1.sensor import _import_batch_statistics
 
 
@@ -37,7 +39,8 @@ async def test_import_batch_statistics_creates_correct_metadata(hass):
         assert metadata["source"] == "qingping_cgs1"
         assert metadata["statistic_id"] == "qingping_cgs1:582d348611f9_temperature"
         assert metadata["unit_of_measurement"] == "°C"
-        assert metadata["has_mean"] is True
+        assert metadata["mean_type"] is StatisticMeanType.ARITHMETIC
+        assert metadata["unit_class"] == "temperature"
         assert metadata["has_sum"] is False
 
 

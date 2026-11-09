@@ -17,7 +17,15 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpda
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.components.recorder.statistics import async_add_external_statistics
+from homeassistant.components.recorder.models import (
+    StatisticData,
+    StatisticMeanType,
+    StatisticMetaData,
+)
+from homeassistant.components.recorder.statistics import (
+    STATISTIC_UNIT_TO_UNIT_CONVERTER,
+    async_add_external_statistics,
+)
 
 from .const import (
     DOMAIN, MQTT_TOPIC_PREFIX,
@@ -109,16 +117,6 @@ async def _write_batch_to_influxdb(
     except Exception as err:
         _LOGGER.warning("Failed to write batch to InfluxDB: %s", err)
 
-
-class StatisticData(dict):
-    """Dict subclass with attribute access for HA statistics compatibility."""
-    __getattr__ = dict.__getitem__
-    __setattr__ = dict.__setitem__
-
-class StatisticMetaData(dict):
-    """Dict subclass with attribute access for HA statistics compatibility."""
-    __getattr__ = dict.__getitem__
-    __setattr__ = dict.__setitem__
 
 OFFLINE_TIMEOUT_REALTIME = 300  # 5 minutes for real-time mode
 OFFLINE_TIMEOUT_HISTORIC = 900  # 15 minutes for historic mode
@@ -437,12 +435,14 @@ async def _import_batch_statistics(
                 state=mean_val,
             ))
 
+        converter = STATISTIC_UNIT_TO_UNIT_CONVERTER.get(unit)
         metadata = StatisticMetaData(
-            has_mean=True,
+            mean_type=StatisticMeanType.ARITHMETIC,
             has_sum=False,
             name=f"{device_name} {display_name}",
             source="qingping_cgs1",
             statistic_id=f"qingping_cgs1:{mac.lower()}_{sensor_key}",
+            unit_class=converter.UNIT_CLASS if converter else None,
             unit_of_measurement=unit,
         )
         try:
