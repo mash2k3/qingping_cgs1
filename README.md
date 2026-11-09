@@ -8,6 +8,8 @@ This custom component integrates the Qingping devices with Home Assistant, allow
 <br /><br /><br />
 ## Requirements
 
+Requires Home Assistant 2025.11.0 or later.
+
 - MQTT integration installed and configured.
 - Enable MQTT on Qingping devices using instructions below.
 - HACS installed.
@@ -178,3 +180,9 @@ If you have any questions or need help, please open an issue on GitHub.
 ## Acknowledgments
 
 Special thanks to the **Qingping team** for their technical support and for providing sample devices to help improve this integration for the community. Their collaboration has been invaluable in bringing enhanced support for TLV protocol devices and advanced configuration features to Home Assistant users.
+
+## Tests
+
+Tests use Python 3.14 and the Home Assistant version pinned by
+`requirements_test.txt`. Install that file in a virtual environment, then run
+`python -m pytest`.
