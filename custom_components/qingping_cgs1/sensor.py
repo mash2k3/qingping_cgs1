@@ -126,8 +126,23 @@ MQTT_PUBLISH_RETRY_LIMIT = 3
 MQTT_PUBLISH_RETRY_DELAY = 5  # seconds
 SETTING_CHANGE_DELAY = 5  # seconds delay before publishing setting changes
 
+# Limit CO2 error handling to the reported model for now.
+# Add other supported models after confirming the same error behavior.
+CO2_ERROR_MODELS = frozenset({"CGP22C"})
+
 # Store pending setting publishes to debounce rapid changes
 _pending_setting_publishes = {}
+
+
+def _is_co2_error(model: str, data: dict) -> bool:
+    """Return whether a supported model's CO2 reading is an error value."""
+    if model not in CO2_ERROR_MODELS:
+        return False
+
+    value = data.get("co2")
+    # CO2 is an unscaled integer; match only the 16-bit 0xF0xx range.
+    return isinstance(value, int) and 0xF000 <= value <= 0xF0FF
+
 
 async def ensure_mqtt_connected(hass):
     """Ensure MQTT is connected before publishing."""
@@ -938,7 +953,13 @@ async def async_setup_entry(
                     elif "rssi" in data:
                         value = data["rssi"]
                 
-                if value is not None:
+                # Reuse existing unavailable/recovery handling for CO2 errors.
+                if (
+                    sensor._sensor_type == SENSOR_CO2
+                    and _is_co2_error(model, data)
+                ):
+                    sensor.set_unavailable()
+                elif value is not None:
                     sensor.update_from_latest_data(value)
         
         except Exception as e:
@@ -1410,6 +1431,13 @@ class QingpingDeviceSensor(CoordinatorEntity, SensorEntity):
         
         # For PM sensors, also check if they are disabled
         if self._sensor_type in [SENSOR_PM10, SENSOR_PM25]:
+            return is_online and not self._is_unavailable
+
+        # Keep device connectivity and measurement availability separate.
+        if (
+            self._sensor_type == SENSOR_CO2
+            and self._config_entry.data.get(CONF_MODEL) in CO2_ERROR_MODELS
+        ):
             return is_online and not self._is_unavailable
         
         return is_online
